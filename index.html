@@ -1,0 +1,1170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Engine-Free 3D Game Framework</title>
+<style>
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #000;
+  font-family: 'Segoe UI', Arial, sans-serif;
+  touch-action: none;
+}
+#app {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+#game-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  outline: none;
+}
+#hud {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 10;
+}
+#crosshair {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 6px;
+  height: 6px;
+  margin: -3px 0 0 -3px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.75);
+  display: none;
+}
+#crosshair.visible { display: block; }
+#fps-counter {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  color: #0f0;
+  font-size: 12px;
+  font-family: monospace;
+  background: rgba(0, 0, 0, 0.4);
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+.ui-btn {
+  pointer-events: auto;
+  border: 2px solid rgba(255, 255, 255, 0.5);
+  background: rgba(20, 20, 20, 0.55);
+  color: #fff;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  backdrop-filter: blur(2px);
+}
+#cam-switch-btn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 46px;
+  height: 46px;
+  font-size: 20px;
+}
+#mobile-controls {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 20;
+  display: none;
+}
+#mobile-controls.active { display: block; }
+.control-zone {
+  position: absolute;
+  bottom: 0;
+  height: 55%;
+  pointer-events: auto;
+  touch-action: none;
+}
+#joystick-zone { left: 0; width: 45%; z-index: 22; pointer-events: auto; }
+#look-zone { right: 0; width: 55%; z-index: 21; pointer-events: auto; }
+#joystick-base {
+  position: absolute;
+  width: 110px;
+  height: 110px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  left: 40px;
+  bottom: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+#joystick-knob {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.55);
+  border: 2px solid rgba(255, 255, 255, 0.8);
+  position: relative;
+  pointer-events: none;
+}
+.action-btn {
+  position: absolute;
+  right: 30px;
+  bottom: 40px;
+  width: 78px;
+  height: 78px;
+  font-size: 13px;
+  font-weight: bold;
+  z-index: 25;
+}
+#loading-screen {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: #0a0a0a;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  z-index: 100;
+  transition: opacity 0.5s ease;
+}
+#loading-screen.hidden { opacity: 0; pointer-events: none; }
+</style>
+</head>
+<body>
+  <div id="app">
+    <canvas id="game-canvas"></canvas>
+
+    <div id="hud">
+      <div id="crosshair"></div>
+      <button id="cam-switch-btn" class="ui-btn">🎥</button>
+      <div id="fps-counter">FPS: 0</div>
+    </div>
+
+    <div id="mobile-controls">
+      <div id="joystick-zone" class="control-zone">
+        <div id="joystick-base">
+          <div id="joystick-knob"></div>
+        </div>
+      </div>
+      <div id="look-zone" class="control-zone"></div>
+      <button id="jump-btn" class="ui-btn action-btn">JUMP</button>
+    </div>
+
+    <div id="loading-screen">
+      <div id="loading-text">Loading World...</div>
+    </div>
+  </div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.module.js"
+    }
+  }
+  </script>
+
+  <script type="module">
+import * as THREE from 'three';
+
+// ============================================================
+// CONFIG — every tunable value lives here.
+// ============================================================
+const CONFIG = {
+  world: {
+    groundSize: 200,
+    groundTextureRepeat: 40,
+  },
+  render: {
+    shadowMapSize: 1024,
+    pixelRatioCap: 1.5,
+    fogNear: 50,
+    fogFar: 200,
+  },
+  player: {
+    height: 1.8,
+    radius: 0.35,
+    walkSpeed: 3.2,
+    runSpeed: 6.2,
+    acceleration: 18,
+    deceleration: 14,
+    airControl: 0.35,
+    jumpForce: 6.2,
+    gravity: -18,
+    turnSmoothing: 12,
+    maxStepHeight: 0.35,
+    maxSlopeAngle: 45,
+  },
+  camera: {
+    fov: 65,
+    near: 0.1,
+    far: 1000,
+    thirdPerson: {
+      distance: 4.5,
+      minDistance: 1.2,
+      maxDistance: 7,
+      height: 1.6,
+      followLerp: 8,
+      collisionPadding: 0.3,
+    },
+    firstPerson: { headHeight: 1.65 },
+    switchLerp: 6,
+    verticalMinDeg: -80,
+    verticalMaxDeg: 80,
+  },
+  input: {
+    mouseSensitivity: 0.0022,
+    touchLookSensitivity: 0.0032,
+    joystickDeadzone: 0.12,
+    joystickRunThreshold: 0.72,
+  },
+  lighting: {
+    sunColor: 0xfff2d6,
+    sunIntensity: 2.4,
+    ambientColor: 0xbdd6ff,
+    ambientIntensity: 0.55,
+  },
+};
+
+// ============================================================
+// RENDERER
+// ============================================================
+class GameRenderer {
+  constructor(canvas) {
+    this.canvas = canvas;
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, CONFIG.render.pixelRatioCap));
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.05;
+
+    this.scene = new THREE.Scene();
+    this.scene.fog = new THREE.Fog(0xbfd9ff, CONFIG.render.fogNear, CONFIG.render.fogFar);
+
+    this.camera = new THREE.PerspectiveCamera(CONFIG.camera.fov, 1, CONFIG.camera.near, CONFIG.camera.far);
+
+    this._resizeHandler = () => this.resize();
+    window.addEventListener('resize', this._resizeHandler);
+    this.resize();
+  }
+  resize() {
+    const w = window.innerWidth, h = window.innerHeight;
+    this.renderer.setSize(w, h, false);
+    this.camera.aspect = w / h;
+    this.camera.updateProjectionMatrix();
+  }
+  render() { this.renderer.render(this.scene, this.camera); }
+}
+
+// ============================================================
+// SKYBOX
+// ============================================================
+const SKY_VERTEX_SHADER = `
+varying vec3 vWorldPosition;
+void main() {
+  vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+  vWorldPosition = worldPosition.xyz;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}`;
+
+const SKY_FRAGMENT_SHADER = `
+uniform vec3 topColor;
+uniform vec3 bottomColor;
+uniform vec3 sunColor;
+uniform vec3 sunDirection;
+uniform float offset;
+uniform float exponent;
+varying vec3 vWorldPosition;
+void main() {
+  float h = normalize(vWorldPosition + offset).y;
+  vec3 skyColor = mix(bottomColor, topColor, max(pow(max(h, 0.0), exponent), 0.0));
+  float sunAmount = max(dot(normalize(vWorldPosition), sunDirection), 0.0);
+  vec3 sunGlow = sunColor * pow(sunAmount, 8.0) * 0.6;
+  gl_FragColor = vec4(skyColor + sunGlow, 1.0);
+}`;
+
+const SKY_PRESETS = {
+  morning: { top: new THREE.Color(0x4a90d9), bottom: new THREE.Color(0xdff2ff), sun: new THREE.Color(0xfff0c0), sunAngle: 25, fogColor: 0xcfe6ff },
+  evening: { top: new THREE.Color(0x2c3e6b), bottom: new THREE.Color(0xff8c5a), sun: new THREE.Color(0xff7043), sunAngle: 8, fogColor: 0xe8a273 },
+  night:   { top: new THREE.Color(0x02030a), bottom: new THREE.Color(0x0a1030), sun: new THREE.Color(0x8fa8ff), sunAngle: -10, fogColor: 0x05070f },
+};
+
+// Set to true once you've uploaded the skybox/ image folder next to this HTML file
+// (skybox/right.png, left.png, top.png, bottom.png, front.png, back.png).
+const USE_IMAGE_SKYBOX = true;
+const SKYBOX_PATH = 'skybox/';
+const SKYBOX_FACES = ['right.png', 'left.png', 'top.png', 'bottom.png', 'front.png', 'back.png'];
+
+class Skybox {
+  constructor(scene, radius = 480) {
+    this.scene = scene;
+    this.timeOfDay = 'morning';
+    this.usingImages = false;
+
+    if (USE_IMAGE_SKYBOX) {
+      this._buildImageSkybox(scene);
+    } else {
+      this._buildProceduralSkybox(scene, radius);
+    }
+
+    this._buildClouds(radius);
+  }
+
+  // Cubemap skybox loaded from 6 images. Falls back to the procedural
+  // gradient sky automatically if any face fails to load (e.g. before
+  // you've uploaded the skybox/ folder to GitHub).
+  _buildImageSkybox(scene) {
+    const loader = new THREE.CubeTextureLoader();
+    loader.setPath(SKYBOX_PATH);
+
+    loader.load(
+      SKYBOX_FACES,
+      (cubeTexture) => {
+        cubeTexture.colorSpace = THREE.SRGBColorSpace;
+        scene.background = cubeTexture;
+        this.usingImages = true;
+        if (this.mesh) {
+          scene.remove(this.mesh);
+          this.mesh = null;
+        }
+      },
+      undefined,
+      () => {
+        // Any face missing/failed -> fall back to procedural sky so the game still runs.
+        console.warn('Skybox images not found at "' + SKYBOX_PATH + '" — using procedural sky instead.');
+        this._buildProceduralSkybox(scene, 480);
+      }
+    );
+  }
+
+  _buildProceduralSkybox(scene, radius) {
+    const geometry = new THREE.SphereGeometry(radius, 32, 16);
+    this.uniforms = {
+      topColor: { value: SKY_PRESETS.morning.top.clone() },
+      bottomColor: { value: SKY_PRESETS.morning.bottom.clone() },
+      sunColor: { value: SKY_PRESETS.morning.sun.clone() },
+      sunDirection: { value: new THREE.Vector3(0, 1, 0) },
+      offset: { value: 15 },
+      exponent: { value: 0.6 },
+    };
+
+    const material = new THREE.ShaderMaterial({
+      uniforms: this.uniforms,
+      vertexShader: SKY_VERTEX_SHADER,
+      fragmentShader: SKY_FRAGMENT_SHADER,
+      side: THREE.BackSide,
+      depthWrite: false,
+      fog: false,
+    });
+
+    this.mesh = new THREE.Mesh(geometry, material);
+    this.mesh.renderOrder = -1000;
+    scene.add(this.mesh);
+    this.setTimeOfDay('morning');
+  }
+
+  _buildClouds(radius) {
+    this.cloudGroup = new THREE.Group();
+    const cloudTexture = this._generateCloudTexture();
+    const cloudMaterial = new THREE.SpriteMaterial({ map: cloudTexture, transparent: true, opacity: 0.75, depthWrite: false, fog: false });
+
+    const cloudRadius = radius * 0.85;
+    const count = 26;
+    for (let i = 0; i < count; i++) {
+      const sprite = new THREE.Sprite(cloudMaterial.clone());
+      const theta = Math.random() * Math.PI * 2;
+      const heightFactor = 0.25 + Math.random() * 0.35;
+      const y = cloudRadius * heightFactor;
+      const horizontalR = Math.sqrt(Math.max(cloudRadius * cloudRadius - y * y, 0));
+      sprite.position.set(Math.cos(theta) * horizontalR, y, Math.sin(theta) * horizontalR);
+      const scale = 60 + Math.random() * 80;
+      sprite.scale.set(scale, scale * 0.5, 1);
+      sprite.userData.driftSpeed = 0.15 + Math.random() * 0.25;
+      sprite.userData.baseTheta = theta;
+      sprite.userData.horizontalR = horizontalR;
+      this.cloudGroup.add(sprite);
+    }
+    this.scene.add(this.cloudGroup);
+  }
+
+  _generateCloudTexture() {
+    const size = 128;
+    const canvas = document.createElement('canvas');
+    canvas.width = size; canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    const gradient = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
+    gradient.addColorStop(0, 'rgba(255,255,255,0.9)');
+    gradient.addColorStop(0.5, 'rgba(255,255,255,0.4)');
+    gradient.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, size, size);
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.needsUpdate = true;
+    return texture;
+  }
+
+  setTimeOfDay(name) {
+    const preset = SKY_PRESETS[name];
+    if (!preset) return;
+    this.timeOfDay = name;
+    if (this.uniforms) {
+      this.uniforms.topColor.value.copy(preset.top);
+      this.uniforms.bottomColor.value.copy(preset.bottom);
+      this.uniforms.sunColor.value.copy(preset.sun);
+      const angleRad = THREE.MathUtils.degToRad(preset.sunAngle);
+      this.uniforms.sunDirection.value.set(Math.cos(angleRad), Math.sin(angleRad), 0.3).normalize();
+    }
+    if (this.scene.fog) this.scene.fog.color.setHex(preset.fogColor);
+  }
+
+  update(delta) {
+    if (!this.cloudGroup) return;
+    for (const sprite of this.cloudGroup.children) {
+      sprite.userData.baseTheta += sprite.userData.driftSpeed * delta * 0.02;
+      const theta = sprite.userData.baseTheta;
+      sprite.position.x = Math.cos(theta) * sprite.userData.horizontalR;
+      sprite.position.z = Math.sin(theta) * sprite.userData.horizontalR;
+    }
+  }
+}
+
+// ============================================================
+// WORLD
+// ============================================================
+class World {
+  constructor(scene) {
+    this.scene = scene;
+    this.collidables = [];
+    this.ramps = [];
+
+    this._buildLighting();
+    this.skybox = new Skybox(scene);
+    this._buildGround();
+    this._buildTestObjects();
+  }
+
+  _buildLighting() {
+    const { sunColor, sunIntensity, ambientColor, ambientIntensity } = CONFIG.lighting;
+    this.sun = new THREE.DirectionalLight(sunColor, sunIntensity);
+    this.sun.position.set(60, 90, 40);
+    this.sun.castShadow = true;
+    this.sun.shadow.mapSize.set(CONFIG.render.shadowMapSize, CONFIG.render.shadowMapSize);
+    this.sun.shadow.camera.left = -45;
+    this.sun.shadow.camera.right = 45;
+    this.sun.shadow.camera.top = 45;
+    this.sun.shadow.camera.bottom = -45;
+    this.sun.shadow.camera.near = 1;
+    this.sun.shadow.camera.far = 200;
+    this.sun.shadow.bias = -0.0005;
+    this.scene.add(this.sun);
+    this.scene.add(this.sun.target);
+
+    this.ambient = new THREE.HemisphereLight(0xffffff, ambientColor, ambientIntensity);
+    this.scene.add(this.ambient);
+  }
+
+  _buildGround() {
+    const size = CONFIG.world.groundSize;
+    const repeat = CONFIG.world.groundTextureRepeat;
+    const texture = this._generateGroundTexture();
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    texture.repeat.set(repeat, repeat);
+    texture.anisotropy = 8;
+
+    const geometry = new THREE.PlaneGeometry(size, size, 1, 1);
+    const material = new THREE.MeshStandardMaterial({ map: texture, roughness: 0.95, metalness: 0.02 });
+
+    this.ground = new THREE.Mesh(geometry, material);
+    this.ground.rotation.x = -Math.PI / 2;
+    this.ground.receiveShadow = true;
+    this.ground.userData.isGround = true;
+    this.scene.add(this.ground);
+    this.groundSize = size;
+  }
+
+  _generateGroundTexture() {
+    const size = 256;
+    const canvas = document.createElement('canvas');
+    canvas.width = size; canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#8d9096';
+    ctx.fillRect(0, 0, size, size);
+    ctx.strokeStyle = '#6d7075';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(0, 0, size, size);
+    for (let i = 0; i < 400; i++) {
+      ctx.fillStyle = `rgba(0,0,0,${Math.random() * 0.04})`;
+      ctx.fillRect(Math.random() * size, Math.random() * size, 2, 2);
+    }
+    return new THREE.CanvasTexture(canvas);
+  }
+
+  _buildTestObjects() {
+    const boxMat = new THREE.MeshStandardMaterial({ color: 0x5a6270, roughness: 0.8 });
+    const rampMat = new THREE.MeshStandardMaterial({ color: 0x707680, roughness: 0.85 });
+    const accentMat = new THREE.MeshStandardMaterial({ color: 0x2f6fed, roughness: 0.5, metalness: 0.1 });
+
+    this._addBox([-14, 1, -4], [3, 2, 3], boxMat);
+    this._addBox([14, 1.5, -6], [4, 3, 4], boxMat);
+    this._addBox([-6, 0.5, 6], [1, 1, 1], boxMat);
+    this._addBox([-4, 0.5, 6], [1, 1, 1], boxMat);
+    this._addBox([-2, 0.5, 6], [1, 1, 1], boxMat);
+    this._addBox([-20, 1, 0], [2.5, 2, 2.5], accentMat);
+    this._addBox([20, 1, 0], [2.5, 2, 2.5], accentMat);
+    this._buildStairs([0, 0, -18], 6, 0.35, 1.4, boxMat);
+    this._addRamp([10, 0, 10], [6, 3, 6], 22, rampMat);
+    this._addRamp([-10, 0, 14], [5, 2, 5], -18, rampMat);
+    this._addBox([0, 2.1, -24], [8, 0.3, 6], boxMat);
+  }
+
+  _addBox(position, size, material) {
+    const geometry = new THREE.BoxGeometry(size[0], size[1], size[2]);
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.position.set(position[0], position[1], position[2]);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.userData.collider = 'box';
+    mesh.geometry.computeBoundingBox();
+    this.scene.add(mesh);
+    this.collidables.push(mesh);
+    return mesh;
+  }
+
+  _addRamp(position, size, angleDeg, material) {
+    const geometry = new THREE.BoxGeometry(size[0], size[1], size[2]);
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.position.set(position[0], size[1] / 2, position[2]);
+    mesh.rotation.z = THREE.MathUtils.degToRad(angleDeg);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.userData.collider = 'ramp';
+    mesh.userData.slopeAngle = Math.abs(angleDeg);
+    mesh.geometry.computeBoundingBox();
+    this.scene.add(mesh);
+    this.collidables.push(mesh);
+    this.ramps.push(mesh);
+    return mesh;
+  }
+
+  _buildStairs(origin, steps, stepHeight, stepDepth, material) {
+    for (let i = 0; i < steps; i++) {
+      const geometry = new THREE.BoxGeometry(4, stepHeight * (i + 1), stepDepth);
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.position.set(origin[0], (stepHeight * (i + 1)) / 2, origin[2] - i * stepDepth);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      mesh.userData.collider = 'box';
+      mesh.geometry.computeBoundingBox();
+      this.scene.add(mesh);
+      this.collidables.push(mesh);
+    }
+  }
+
+  update(delta) { this.skybox.update(delta); }
+
+  setTimeOfDay(name) {
+    this.skybox.setTimeOfDay(name);
+    const preset = { morning: 2.4, evening: 1.6, night: 0.15 }[name] ?? 2.0;
+    this.sun.intensity = preset;
+  }
+}
+
+// ============================================================
+// PHYSICS
+// ============================================================
+const _box = new THREE.Box3();
+const UP = new THREE.Vector3(0, 1, 0);
+
+const _rayOrigin = new THREE.Vector3();
+const _rayDown = new THREE.Vector3(0, -1, 0);
+const _groundRaycaster = new THREE.Raycaster();
+_groundRaycaster.far = 20;
+
+class PhysicsWorld {
+  constructor(world) {
+    this.world = world;
+    // Precomputed bounding boxes, refreshed once (static world objects don't move).
+    this._boxCache = new Map();
+    for (const mesh of world.collidables) {
+      if (mesh.userData.collider === 'box') {
+        this._boxCache.set(mesh, new THREE.Box3().setFromObject(mesh));
+      }
+    }
+  }
+
+  _nearby(position, radius) {
+    // Cheap broad-phase: skip meshes far away before doing precise checks.
+    const out = [];
+    for (const mesh of this.world.collidables) {
+      const dx = mesh.position.x - position.x;
+      const dz = mesh.position.z - position.z;
+      if (dx * dx + dz * dz < (radius + 8) * (radius + 8)) out.push(mesh);
+    }
+    return out;
+  }
+
+  resolveHorizontal(position, radius) {
+    for (const mesh of this._nearby(position, radius)) {
+      if (mesh.userData.collider !== 'box') continue;
+      const box = this._boxCache.get(mesh);
+      const closestX = THREE.MathUtils.clamp(position.x, box.min.x, box.max.x);
+      const closestZ = THREE.MathUtils.clamp(position.z, box.min.z, box.max.z);
+      const dx = position.x - closestX;
+      const dz = position.z - closestZ;
+      const distSq = dx * dx + dz * dz;
+      if (distSq < radius * radius) {
+        const feetY = position.y;
+        const headY = position.y + CONFIG.player.height;
+        if (headY < box.min.y + 0.02 || feetY > box.max.y - 0.02) continue;
+        const dist = Math.sqrt(distSq) || 0.0001;
+        const pushOut = radius - dist;
+        position.x += (dx / dist) * pushOut;
+        position.z += (dz / dist) * pushOut;
+      }
+    }
+    const half = this.world.groundSize / 2 - radius;
+    position.x = THREE.MathUtils.clamp(position.x, -half, half);
+    position.z = THREE.MathUtils.clamp(position.z, -half, half);
+  }
+
+  sampleGroundHeight(position) {
+    _rayOrigin.set(position.x, position.y + 5, position.z);
+    _groundRaycaster.set(_rayOrigin, _rayDown);
+    const targets = this._nearby(position, 2);
+    targets.push(this.world.ground);
+    const hits = _groundRaycaster.intersectObjects(targets, false);
+    if (hits.length === 0) return null;
+    const hit = hits[0];
+    const normal = hit.face ? hit.face.normal.clone().transformDirection(hit.object.matrixWorld) : UP.clone();
+    const slopeAngle = THREE.MathUtils.radToDeg(normal.angleTo(UP));
+    return { height: hit.point.y, normal, isRamp: hit.object.userData.collider === 'ramp', slopeAngle };
+  }
+}
+
+// ============================================================
+// PLAYER
+// ============================================================
+const _forward = new THREE.Vector3();
+const _right = new THREE.Vector3();
+const _moveDir = new THREE.Vector3();
+const _targetVel = new THREE.Vector3();
+
+class Player {
+  constructor(scene, physics) {
+    this.physics = physics;
+    this.position = new THREE.Vector3(0, 2, 6);
+    this.velocity = new THREE.Vector3();
+    this.yaw = Math.PI;
+    this.grounded = false;
+    this.jumpQueued = false;
+    this._canJump = true;
+    this.currentSpeed = 0;
+    this._buildVisual(scene);
+  }
+
+  _buildVisual(scene) {
+    this.mesh = new THREE.Group();
+    const bodyMat = new THREE.MeshStandardMaterial({ color: 0xd8d8de, roughness: 0.5, metalness: 0.15 });
+    const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.28, 0.75, 4, 8), bodyMat);
+    torso.position.y = 1.05;
+    torso.castShadow = true;
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 16, 16), bodyMat);
+    head.position.y = 1.62;
+    head.castShadow = true;
+    this.mesh.add(torso, head);
+    this.mesh.position.copy(this.position);
+    scene.add(this.mesh);
+    this.headHeight = CONFIG.camera.firstPerson.headHeight;
+  }
+
+  requestJump() { this.jumpQueued = true; }
+
+  update(delta, moveInput, running, cameraYaw) {
+    const cfg = CONFIG.player;
+    const ground = this.physics.sampleGroundHeight(this.position);
+    const groundHeight = ground ? ground.height : 0;
+    const distToGround = this.position.y - groundHeight;
+    this.grounded = distToGround <= 0.08 && this.velocity.y <= 0.01;
+
+    _forward.set(Math.sin(cameraYaw), 0, Math.cos(cameraYaw));
+    _right.set(-Math.cos(cameraYaw), 0, Math.sin(cameraYaw));
+
+    _moveDir.set(0, 0, 0);
+    _moveDir.addScaledVector(_forward, moveInput.y);
+    _moveDir.addScaledVector(_right, moveInput.x);
+
+    const hasInput = _moveDir.lengthSq() > 0.0001;
+    if (hasInput) _moveDir.normalize();
+
+    const targetSpeed = running ? cfg.runSpeed : cfg.walkSpeed;
+    _targetVel.copy(_moveDir).multiplyScalar(hasInput ? targetSpeed : 0);
+
+    const control = this.grounded ? 1 : cfg.airControl;
+    const rate = (hasInput ? cfg.acceleration : cfg.deceleration) * control;
+    this.velocity.x = THREE.MathUtils.damp(this.velocity.x, _targetVel.x, rate, delta);
+    this.velocity.z = THREE.MathUtils.damp(this.velocity.z, _targetVel.z, rate, delta);
+
+    if (this.jumpQueued && this.grounded && this._canJump) {
+      this.velocity.y = cfg.jumpForce;
+      this.grounded = false;
+      this._canJump = false;
+    }
+    if (!this.jumpQueued) this._canJump = true;
+    this.jumpQueued = false;
+
+    if (!this.grounded) {
+      this.velocity.y += cfg.gravity * delta;
+    } else if (this.velocity.y < 0) {
+      this.velocity.y = 0;
+    }
+
+    this.position.x += this.velocity.x * delta;
+    this.position.z += this.velocity.z * delta;
+    this.physics.resolveHorizontal(this.position, cfg.radius);
+    this.position.y += this.velocity.y * delta;
+
+    const groundAfter = this.physics.sampleGroundHeight(this.position);
+    if (groundAfter) {
+      const heightDiff = groundAfter.height - this.position.y;
+      const withinStep = heightDiff <= cfg.maxStepHeight && heightDiff > -0.5;
+      if (this.velocity.y <= 0 && withinStep && (groundAfter.slopeAngle <= cfg.maxSlopeAngle)) {
+        this.position.y = THREE.MathUtils.damp(this.position.y, groundAfter.height, 20, delta);
+        this.velocity.y = 0;
+        this.grounded = true;
+      } else if (this.position.y < groundAfter.height - 0.5) {
+        this.position.y = groundAfter.height;
+        this.velocity.y = 0;
+        this.grounded = true;
+      }
+    }
+
+    if (this.position.y < -20) {
+      this.position.set(0, 3, 6);
+      this.velocity.set(0, 0, 0);
+    }
+
+    if (hasInput) {
+      const targetYaw = Math.atan2(_moveDir.x, _moveDir.z);
+      this.yaw = this._dampAngle(this.yaw, targetYaw, cfg.turnSmoothing, delta);
+    }
+
+    this.currentSpeed = Math.hypot(this.velocity.x, this.velocity.z);
+    this.mesh.position.copy(this.position);
+    this.mesh.rotation.y = this.yaw;
+  }
+
+  _dampAngle(current, target, rate, delta) {
+    let diff = target - current;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    return current + diff * (1 - Math.exp(-rate * delta));
+  }
+
+  getHeadPosition(out) {
+    out.set(this.position.x, this.position.y + this.headHeight, this.position.z);
+    return out;
+  }
+
+  setVisualVisible(visible) { this.mesh.visible = visible; }
+}
+
+// ============================================================
+// CAMERA
+// ============================================================
+const _idealPos = new THREE.Vector3();
+const _headPos = new THREE.Vector3();
+const _rayDir = new THREE.Vector3();
+const _raycaster = new THREE.Raycaster();
+
+const CameraMode = { FIRST_PERSON: 'first', THIRD_PERSON: 'third' };
+
+class CameraRig {
+  constructor(camera, player, world) {
+    this.camera = camera;
+    this.player = player;
+    this.world = world;
+    this.mode = CameraMode.THIRD_PERSON;
+    this.pitch = 0.18;
+    this.yaw = player.yaw;
+    this.currentDistance = CONFIG.camera.thirdPerson.distance;
+    player.setVisualVisible(true);
+  }
+
+  toggleMode() {
+    this.mode = this.mode === CameraMode.THIRD_PERSON ? CameraMode.FIRST_PERSON : CameraMode.THIRD_PERSON;
+    const crosshair = document.getElementById('crosshair');
+    crosshair.classList.toggle('visible', this.mode === CameraMode.FIRST_PERSON);
+  }
+
+  applyLook(dx, dy) {
+    this.yaw -= dx;
+    this.pitch -= dy;
+    const minP = THREE.MathUtils.degToRad(CONFIG.camera.verticalMinDeg);
+    const maxP = THREE.MathUtils.degToRad(CONFIG.camera.verticalMaxDeg);
+    this.pitch = THREE.MathUtils.clamp(this.pitch, minP, maxP);
+  }
+
+  update(delta) {
+    const targetDistance = this.mode === CameraMode.THIRD_PERSON ? CONFIG.camera.thirdPerson.distance : 0;
+    this.currentDistance = THREE.MathUtils.damp(this.currentDistance, targetDistance, CONFIG.camera.switchLerp, delta);
+    this.player.setVisualVisible(this.currentDistance > 0.35);
+    this.player.getHeadPosition(_headPos);
+
+    const dirX = Math.sin(this.yaw) * Math.cos(this.pitch);
+    const dirY = Math.sin(this.pitch);
+    const dirZ = Math.cos(this.yaw) * Math.cos(this.pitch);
+
+    if (this.currentDistance > 0.35) {
+      _idealPos.set(
+        _headPos.x - dirX * this.currentDistance,
+        _headPos.y - dirY * this.currentDistance + CONFIG.camera.thirdPerson.height * 0.15,
+        _headPos.z - dirZ * this.currentDistance
+      );
+      const safeDistance = this._avoidWallClipping(_headPos, _idealPos);
+      this.camera.position.lerp(
+        new THREE.Vector3(
+          _headPos.x - dirX * safeDistance,
+          _headPos.y - dirY * safeDistance + CONFIG.camera.thirdPerson.height * 0.15,
+          _headPos.z - dirZ * safeDistance
+        ),
+        Math.min(1, CONFIG.camera.thirdPerson.followLerp * delta)
+      );
+    } else {
+      this.camera.position.copy(_headPos);
+    }
+
+    // Keep camera from clipping below ground level when looking down.
+    const minCamY = this.player.position.y + 0.15;
+    if (this.camera.position.y < minCamY) this.camera.position.y = minCamY;
+
+    const lookTarget = new THREE.Vector3(
+      this.camera.position.x + dirX,
+      this.camera.position.y + dirY,
+      this.camera.position.z + dirZ
+    );
+    this.camera.lookAt(lookTarget);
+  }
+
+  _avoidWallClipping(from, idealPos) {
+    _rayDir.subVectors(idealPos, from).normalize();
+    const maxDist = from.distanceTo(idealPos);
+    _raycaster.set(from, _rayDir);
+    _raycaster.far = maxDist;
+    _raycaster.near = 0;
+    const hits = _raycaster.intersectObjects(this.world.collidables, false);
+    if (hits.length > 0) {
+      return Math.max(hits[0].distance - CONFIG.camera.thirdPerson.collisionPadding, CONFIG.camera.thirdPerson.minDistance);
+    }
+    return maxDist;
+  }
+
+  getYaw() { return this.yaw; }
+}
+
+// ============================================================
+// INPUT
+// ============================================================
+class InputManager {
+  constructor(canvas) {
+    this.canvas = canvas;
+    this.isMobile = this._detectMobile();
+    this.state = {
+      moveX: 0, moveY: 0, running: false, jumpPressed: false,
+      lookDeltaX: 0, lookDeltaY: 0, camToggleRequested: false,
+    };
+    this._keys = new Set();
+    this._pointerLocked = false;
+    this._joystick = { active: false, pointerId: null, originX: 0, originY: 0, dx: 0, dy: 0 };
+    this._look = { active: false, pointerId: null, lastX: 0, lastY: 0 };
+
+    this._bindKeyboardMouse();
+    if (this.isMobile) this._bindTouchControls();
+    document.getElementById('mobile-controls').classList.toggle('active', this.isMobile);
+  }
+
+  _detectMobile() {
+    return /Android|iPhone|iPad|iPod|Mobi/i.test(navigator.userAgent) || 'ontouchstart' in window;
+  }
+
+  _bindKeyboardMouse() {
+    window.addEventListener('keydown', (e) => {
+      this._keys.add(e.code);
+      if (e.code === 'KeyC') this.state.camToggleRequested = true;
+    });
+    window.addEventListener('keyup', (e) => this._keys.delete(e.code));
+
+    this.canvas.addEventListener('click', () => {
+      if (!this.isMobile) this.canvas.requestPointerLock?.();
+    });
+
+    document.addEventListener('pointerlockchange', () => {
+      this._pointerLocked = document.pointerLockElement === this.canvas;
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (!this._pointerLocked) return;
+      this.state.lookDeltaX += e.movementX * CONFIG.input.mouseSensitivity;
+      this.state.lookDeltaY += e.movementY * CONFIG.input.mouseSensitivity;
+    });
+
+    document.getElementById('cam-switch-btn').addEventListener('click', () => {
+      this.state.camToggleRequested = true;
+    });
+  }
+
+  _readKeyboardMovement() {
+    let x = 0, y = 0;
+    if (this._keys.has('KeyW') || this._keys.has('ArrowUp')) y += 1;
+    if (this._keys.has('KeyS') || this._keys.has('ArrowDown')) y -= 1;
+    if (this._keys.has('KeyD') || this._keys.has('ArrowRight')) x += 1;
+    if (this._keys.has('KeyA') || this._keys.has('ArrowLeft')) x -= 1;
+    const len = Math.hypot(x, y);
+    if (len > 1) { x /= len; y /= len; }
+    this.state.moveX = x;
+    this.state.moveY = y;
+    this.state.running = this._keys.has('ShiftLeft') || this._keys.has('ShiftRight');
+    this.state.jumpPressed = this._keys.has('Space');
+  }
+
+  _bindTouchControls() {
+    const joystickZone = document.getElementById('joystick-zone');
+    const joystickKnob = document.getElementById('joystick-knob');
+    const joystickBase = document.getElementById('joystick-base');
+    const lookZone = document.getElementById('look-zone');
+    const jumpBtn = document.getElementById('jump-btn');
+    const camBtn = document.getElementById('cam-switch-btn');
+    const maxRadius = 45;
+
+    joystickZone.addEventListener('pointerdown', (e) => {
+      this._joystick.active = true;
+      this._joystick.pointerId = e.pointerId;
+      const rect = joystickBase.getBoundingClientRect();
+      this._joystick.originX = rect.left + rect.width / 2;
+      this._joystick.originY = rect.top + rect.height / 2;
+      joystickZone.setPointerCapture(e.pointerId);
+    });
+
+    joystickZone.addEventListener('pointermove', (e) => {
+      if (!this._joystick.active || e.pointerId !== this._joystick.pointerId) return;
+      let dx = e.clientX - this._joystick.originX;
+      let dy = e.clientY - this._joystick.originY;
+      const dist = Math.hypot(dx, dy);
+      if (dist > maxRadius) { dx = (dx / dist) * maxRadius; dy = (dy / dist) * maxRadius; }
+      this._joystick.dx = dx / maxRadius;
+      this._joystick.dy = dy / maxRadius;
+      joystickKnob.style.transform = `translate(${dx}px, ${dy}px)`;
+    });
+
+    const releaseJoystick = (e) => {
+      if (this._joystick.pointerId !== null && e.pointerId !== this._joystick.pointerId) return;
+      this._joystick.active = false;
+      this._joystick.pointerId = null;
+      this._joystick.dx = 0;
+      this._joystick.dy = 0;
+      joystickKnob.style.transform = 'translate(0px, 0px)';
+    };
+    joystickZone.addEventListener('pointerup', releaseJoystick);
+    joystickZone.addEventListener('pointercancel', releaseJoystick);
+    joystickZone.addEventListener('pointerleave', releaseJoystick);
+
+    lookZone.addEventListener('pointerdown', (e) => {
+      this._look.active = true;
+      this._look.pointerId = e.pointerId;
+      this._look.lastX = e.clientX;
+      this._look.lastY = e.clientY;
+      lookZone.setPointerCapture(e.pointerId);
+    });
+
+    lookZone.addEventListener('pointermove', (e) => {
+      if (!this._look.active || e.pointerId !== this._look.pointerId) return;
+      const dx = e.clientX - this._look.lastX;
+      const dy = e.clientY - this._look.lastY;
+      this._look.lastX = e.clientX;
+      this._look.lastY = e.clientY;
+      this.state.lookDeltaX += dx * CONFIG.input.touchLookSensitivity;
+      this.state.lookDeltaY += dy * CONFIG.input.touchLookSensitivity;
+    });
+
+    const releaseLook = (e) => {
+      if (this._look.pointerId !== null && e.pointerId !== this._look.pointerId) return;
+      this._look.active = false;
+      this._look.pointerId = null;
+    };
+    lookZone.addEventListener('pointerup', releaseLook);
+    lookZone.addEventListener('pointercancel', releaseLook);
+    lookZone.addEventListener('pointerleave', releaseLook);
+
+    jumpBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); this.state.jumpPressed = true; });
+    jumpBtn.addEventListener('pointerup', () => { this.state.jumpPressed = false; });
+    jumpBtn.addEventListener('pointercancel', () => { this.state.jumpPressed = false; });
+
+    camBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); this.state.camToggleRequested = true; });
+  }
+
+  _readJoystickMovement() {
+    const { dx, dy } = this._joystick;
+    const magnitude = Math.hypot(dx, dy);
+    if (magnitude < CONFIG.input.joystickDeadzone) {
+      this.state.moveX = 0; this.state.moveY = 0; this.state.running = false;
+      return;
+    }
+    this.state.moveX = dx;
+    this.state.moveY = -dy;
+    this.state.running = magnitude > CONFIG.input.joystickRunThreshold;
+  }
+
+  update() {
+    if (this.isMobile) this._readJoystickMovement();
+    else this._readKeyboardMovement();
+  }
+
+  consumeLookDelta() {
+    const dx = this.state.lookDeltaX, dy = this.state.lookDeltaY;
+    this.state.lookDeltaX = 0; this.state.lookDeltaY = 0;
+    return { dx, dy };
+  }
+
+  consumeCamToggle() {
+    const toggled = this.state.camToggleRequested;
+    this.state.camToggleRequested = false;
+    return toggled;
+  }
+}
+
+// ============================================================
+// CONTROLS
+// ============================================================
+class Controls {
+  constructor(input, player, cameraRig) {
+    this.input = input;
+    this.player = player;
+    this.cameraRig = cameraRig;
+  }
+
+  update(delta) {
+    this.input.update();
+
+    const { dx, dy } = this.input.consumeLookDelta();
+    if (dx !== 0 || dy !== 0) this.cameraRig.applyLook(dx, dy);
+
+    if (this.input.consumeCamToggle()) this.cameraRig.toggleMode();
+
+    if (this.input.state.jumpPressed) this.player.requestJump();
+
+    const moveInput = { x: this.input.state.moveX, y: this.input.state.moveY };
+    const running = this.input.state.running;
+    this.player.update(delta, moveInput, running, this.cameraRig.getYaw());
+  }
+}
+
+// ============================================================
+// ENGINE — the game loop: Update -> Physics -> Player -> Camera -> Render
+// ============================================================
+class Engine {
+  constructor({ onUpdate, onRender }) {
+    this.onUpdate = onUpdate;
+    this.onRender = onRender;
+    this.running = false;
+    this._lastTime = performance.now();
+    this._fpsFrames = 0;
+    this._fpsLast = performance.now();
+    this.fps = 60;
+  }
+
+  start() {
+    this.running = true;
+    this._lastTime = performance.now();
+    requestAnimationFrame((t) => this._loop(t));
+  }
+
+  _loop(now) {
+    if (!this.running) return;
+    let delta = (now - this._lastTime) / 1000;
+    this._lastTime = now;
+    delta = Math.min(delta, 1 / 20);
+
+    this.onUpdate(delta);
+    this.onRender();
+
+    this._fpsFrames++;
+    if (now - this._fpsLast >= 500) {
+      this.fps = Math.round((this._fpsFrames * 1000) / (now - this._fpsLast));
+      this._fpsFrames = 0;
+      this._fpsLast = now;
+    }
+
+    requestAnimationFrame((t) => this._loop(t));
+  }
+}
+
+// ============================================================
+// GAME — composition root
+// ============================================================
+class Game {
+  constructor() {
+    const canvas = document.getElementById('game-canvas');
+
+    this.gameRenderer = new GameRenderer(canvas);
+    this.world = new World(this.gameRenderer.scene);
+    this.physics = new PhysicsWorld(this.world);
+    this.player = new Player(this.gameRenderer.scene, this.physics);
+    this.cameraRig = new CameraRig(this.gameRenderer.camera, this.player, this.world);
+    this.input = new InputManager(canvas);
+    this.controls = new Controls(this.input, this.player, this.cameraRig);
+
+    this.fpsCounter = document.getElementById('fps-counter');
+
+    this.engine = new Engine({
+      onUpdate: (delta) => this._update(delta),
+      onRender: () => this._render(),
+    });
+
+    this._hideLoadingScreen();
+    this.engine.start();
+  }
+
+  _update(delta) {
+    this.controls.update(delta);
+    this.cameraRig.update(delta);
+    this.world.update(delta);
+    this.fpsCounter.textContent = `FPS: ${this.engine.fps}`;
+  }
+
+  _render() { this.gameRenderer.render(); }
+
+  _hideLoadingScreen() {
+    const screen = document.getElementById('loading-screen');
+    setTimeout(() => screen.classList.add('hidden'), 300);
+  }
+}
+
+window.addEventListener('DOMContentLoaded', () => { new Game(); });
+  </script>
+</body>
+</html>
