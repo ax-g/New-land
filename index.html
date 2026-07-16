@@ -183,10 +183,9 @@ html, body {
 .small-btn:active, .ui-btn:active { transform: scale(0.9); background: rgba(60,60,60,0.75); }
 .small-btn.disabled { opacity: 0.35; pointer-events: none; }
 
-#jump-btn { right: 14px; bottom: 40px; width: 64px; height: 64px; font-size: 12px; }
-#pickup-btn { display: none; right: 14px; top: 144px; width: 44px; height: 44px; background: rgba(40,140,80,0.65); }
+#jump-btn { right: 14px; bottom: 56px; width: 60px; height: 60px; font-size: 12px; }
+#pickup-btn { display: none; right: 14px; top: 144px; width: 44px; height: 44px; background: rgba(40,140,80,0.55); backdrop-filter: blur(6px); }
 #pickup-btn.visible { display: flex; }
-#drop-btn { right: 14px; top: 90px; width: 40px; height: 40px; }
 
 #interact-prompt {
   position: absolute;
@@ -277,7 +276,8 @@ html, body {
   position: absolute;
   top: 0; left: 0;
   width: 100%; height: 100%;
-  background: rgba(0,0,0,0.72);
+  background: rgba(10,10,14,0.55);
+  backdrop-filter: blur(4px);
   z-index: 40;
   display: none;
   align-items: center;
@@ -286,38 +286,81 @@ html, body {
 }
 #inventory-panel.visible { display: flex; }
 #inventory-panel .panel-box {
-  background: rgba(25,25,28,0.95);
-  border: 1px solid rgba(255,255,255,0.15);
-  border-radius: 10px;
-  padding: 18px;
-  min-width: 240px;
-  max-width: 80vw;
+  background: rgba(40,42,54,0.55);
+  backdrop-filter: blur(14px) saturate(140%);
+  border: 2px solid rgba(255,255,255,0.25);
+  border-radius: 12px;
+  padding: 16px;
+  min-width: 300px;
+  max-width: 88vw;
   color: #fff;
-  font-family: monospace;
+  font-family: 'Courier New', monospace;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.15);
 }
-#inventory-panel h3 { margin-bottom: 12px; font-size: 14px; letter-spacing: 1px; opacity: 0.8; }
-#inventory-list { list-style: none; display: flex; flex-direction: column; gap: 8px; max-height: 50vh; overflow-y: auto; }
-#inventory-list li {
-  display: flex; justify-content: space-between; align-items: center;
-  background: rgba(255,255,255,0.06);
-  padding: 8px 10px;
-  border-radius: 6px;
-  font-size: 13px;
-  cursor: pointer;
+#inventory-panel h3 {
+  margin-bottom: 12px; font-size: 13px; letter-spacing: 2px; opacity: 0.85;
+  text-align: center; text-shadow: 0 1px 2px rgba(0,0,0,0.6);
 }
-#inventory-list li.equipped { border: 1px solid #ffcc33; background: rgba(255,204,51,0.12); }
-#inventory-list .empty-msg { opacity: 0.5; font-size: 12px; text-align: center; padding: 10px 0; }
+#inventory-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  max-height: 56vh;
+  overflow-y: auto;
+  padding: 6px;
+}
+.inv-slot {
+  aspect-ratio: 1;
+  min-width: 56px;
+  background: rgba(20,20,28,0.55);
+  border: 2px solid rgba(255,255,255,0.18);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  position: relative;
+  backdrop-filter: blur(6px);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.12), inset 0 -2px 4px rgba(0,0,0,0.3);
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.1s ease;
+}
+.inv-slot:active { cursor: grabbing; transform: scale(0.94); }
+.inv-slot.equipped { border-color: #ffcc33; background: rgba(255,204,51,0.16); box-shadow: 0 0 10px rgba(255,204,51,0.4), inset 0 1px 0 rgba(255,255,255,0.2); }
+.inv-slot.drag-over { border-color: #6fdcff; background: rgba(111,220,255,0.16); }
+.inv-slot.empty { cursor: default; opacity: 0.5; }
+.inv-slot .slot-icon { font-size: 22px; line-height: 1; margin-bottom: 2px; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.6)); }
+.inv-slot .slot-label { font-size: 8px; letter-spacing: 0.5px; opacity: 0.9; text-align: center; padding: 0 2px; }
+.inv-slot .slot-stat { position: absolute; bottom: 2px; right: 4px; font-size: 8px; color: #ffcc33; }
+#inventory-drop-zone {
+  margin-top: 12px;
+  padding: 10px;
+  border: 2px dashed rgba(255,90,90,0.5);
+  border-radius: 8px;
+  text-align: center;
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: rgba(255,150,150,0.85);
+  background: rgba(180,30,30,0.08);
+  backdrop-filter: blur(6px);
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+#inventory-drop-zone.drag-over { background: rgba(180,30,30,0.25); border-color: #ff5a5a; color: #fff; }
+#inventory-empty-msg { opacity: 0.55; font-size: 11px; text-align: center; padding: 16px 8px; grid-column: 1 / -1; }
 #inventory-close {
   margin-top: 14px;
   width: 100%;
-  padding: 8px;
-  background: rgba(255,255,255,0.1);
-  border: 1px solid rgba(255,255,255,0.25);
+  padding: 9px;
+  background: rgba(255,255,255,0.12);
+  border: 2px solid rgba(255,255,255,0.3);
   color: #fff;
-  border-radius: 6px;
-  font-family: monospace;
+  border-radius: 8px;
+  font-family: 'Courier New', monospace;
+  letter-spacing: 1px;
   cursor: pointer;
+  backdrop-filter: blur(6px);
 }
+#inventory-close:active { background: rgba(255,255,255,0.22); }
 #loading-screen {
   position: absolute;
   top: 0;
@@ -369,13 +412,13 @@ html, body {
       <div id="look-zone"></div>
       <button id="jump-btn" class="ui-btn small-btn">JUMP</button>
       <button id="pickup-btn" class="ui-btn small-btn">PICKUP</button>
-      <button id="drop-btn" class="ui-btn small-btn">DROP</button>
     </div>
 
     <div id="inventory-panel">
       <div class="panel-box">
         <h3>INVENTORY</h3>
-        <ul id="inventory-list"></ul>
+        <div id="inventory-grid"></div>
+        <div id="inventory-drop-zone">DRAG HERE TO DROP</div>
         <button id="inventory-close">CLOSE</button>
       </div>
     </div>
@@ -398,7 +441,7 @@ import * as THREE from 'three';
 
 const CONFIG = {
   world: { groundSize: 200, groundTextureRepeat: 40 },
-  render: { shadowMapSize: 1024, pixelRatioCap: 1.5, fogNear: 50, fogFar: 200 },
+  render: { shadowMapSize: 512, pixelRatioCap: 1, fogNear: 40, fogFar: 160 },
   player: {
     height: 1.8, radius: 0.35,
     walkSpeed: 3.2, runSpeed: 6.2,
@@ -1174,7 +1217,6 @@ class InputManager {
     const lookZone = document.getElementById('look-zone');
     const jumpBtn = document.getElementById('jump-btn');
     const pickupBtn = document.getElementById('pickup-btn');
-    const dropBtn = document.getElementById('drop-btn');
     const maxRadius = 45;
 
     joystickZone.addEventListener('pointerdown', (e) => {
@@ -1270,7 +1312,6 @@ class InputManager {
     jumpBtn.addEventListener('pointercancel', () => { this.state.jumpPressed = false; });
 
     pickupBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); this.state.pickupRequested = true; });
-    dropBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); this.state.dropRequested = true; });
   }
 
   _readJoystickMovement() {
@@ -1398,16 +1439,24 @@ class RaycastManager {
     this.world = world;
     this.raycaster = new THREE.Raycaster();
     this.lastHit = null;
+    this._targetsDirty = true;
+    this._cachedTargets = [];
   }
-  queryCenter(maxDistance = 100) {
-    this.raycaster.setFromCamera({ x: 0, y: 0 }, this.camera);
-    this.raycaster.far = maxDistance;
+  markDirty() { this._targetsDirty = true; }
+  _rebuildTargets() {
     const targets = [];
     for (const e of this.world.enemies) targets.push(e.headMesh, e.bodyMesh);
     for (const p of this.world.pickups) targets.push(p.mesh);
     for (const c of this.world.collidables) targets.push(c);
     targets.push(this.world.ground);
-    const hits = this.raycaster.intersectObjects(targets, false);
+    this._cachedTargets = targets;
+    this._targetsDirty = false;
+  }
+  queryCenter(maxDistance = 100) {
+    if (this._targetsDirty) this._rebuildTargets();
+    this.raycaster.setFromCamera({ x: 0, y: 0 }, this.camera);
+    this.raycaster.far = maxDistance;
+    const hits = this.raycaster.intersectObjects(this._cachedTargets, false);
     this.lastHit = hits.length > 0 ? hits[0] : null;
     return this.lastHit;
   }
@@ -1624,10 +1673,13 @@ class DropManager {
   }
 }
 
+const WEAPON_ICONS = { sword: '🗡️', axe: '🪓', spear: '🔱', dagger: '🔪', hammer: '🔨' };
+
 class UIManager {
-  constructor(eventBus, weaponManager) {
+  constructor(eventBus, weaponManager, dropManager) {
     this.bus = eventBus;
     this.weapons = weaponManager;
+    this.dropManager = dropManager;
     this.weaponHud = document.getElementById('weapon-hud');
     this.interactPrompt = document.getElementById('interact-prompt');
     this.pickupBtn = document.getElementById('pickup-btn');
@@ -1635,43 +1687,103 @@ class UIManager {
     this.damageFlash = document.getElementById('damage-flash');
     this.pickupToast = document.getElementById('pickup-toast');
     this.inventoryPanel = document.getElementById('inventory-panel');
-    this.inventoryList = document.getElementById('inventory-list');
+    this.inventoryGrid = document.getElementById('inventory-grid');
+    this.dropZone = document.getElementById('inventory-drop-zone');
     this._toastTimer = null;
     this.inventoryOpen = false;
+    this._dragIndex = null;
+    this._dragEl = null;
 
-    this.bus.on('weapon-equipped', ({ weapon }) => { this._renderWeapon(weapon); this._renderInventoryList(); });
+    this.bus.on('weapon-equipped', ({ weapon }) => { this._renderWeapon(weapon); this._renderInventoryGrid(); });
     this.bus.on('pickup-nearby', ({ pickup }) => this._renderPrompt(pickup));
     this.bus.on('hitmarker', () => this._showHitMarker());
     this.bus.on('player-damaged', () => this._flashDamage());
-    this.bus.on('pickup-collected', ({ pickup }) => { this._showToast('Picked up ' + pickup.label); this._renderInventoryList(); });
-    this.bus.on('inventory-changed', () => this._renderInventoryList());
+    this.bus.on('pickup-collected', ({ pickup }) => { this._showToast('Picked up ' + pickup.label); this._renderInventoryGrid(); });
+    this.bus.on('inventory-changed', () => this._renderInventoryGrid());
 
     document.getElementById('inventory-close').addEventListener('click', () => this.closeInventory());
     this.inventoryPanel.addEventListener('click', (e) => { if (e.target === this.inventoryPanel) this.closeInventory(); });
+
+    this.dropZone.addEventListener('dragover', (e) => { e.preventDefault(); this.dropZone.classList.add('drag-over'); });
+    this.dropZone.addEventListener('dragleave', () => this.dropZone.classList.remove('drag-over'));
+    this.dropZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      this.dropZone.classList.remove('drag-over');
+      if (this._dragIndex !== null) { this._dropWeaponAt(this._dragIndex); this._dragIndex = null; }
+    });
 
     this._renderWeapon(null);
   }
 
   toggleInventory() { this.inventoryOpen ? this.closeInventory() : this.openInventory(); }
-  openInventory() { this.inventoryOpen = true; this._renderInventoryList(); this.inventoryPanel.classList.add('visible'); }
+  openInventory() { this.inventoryOpen = true; this._renderInventoryGrid(); this.inventoryPanel.classList.add('visible'); }
   closeInventory() { this.inventoryOpen = false; this.inventoryPanel.classList.remove('visible'); }
 
-  _renderInventoryList() {
-    this.inventoryList.innerHTML = '';
+  _renderInventoryGrid() {
+    this.inventoryGrid.innerHTML = '';
+    this.dropZone.classList.remove('drag-over');
+
     if (this.weapons.inventory.length === 0) {
-      const li = document.createElement('li');
-      li.className = 'empty-msg';
-      li.textContent = 'No weapons carried yet. Walk up to a weapon and press Pickup.';
-      this.inventoryList.appendChild(li);
+      const msg = document.createElement('div');
+      msg.id = 'inventory-empty-msg';
+      msg.textContent = 'No weapons carried yet. Walk up to a weapon and pickup.';
+      this.inventoryGrid.appendChild(msg);
       return;
     }
+
     this.weapons.inventory.forEach((weapon, index) => {
-      const li = document.createElement('li');
-      li.className = index === this.weapons.equippedIndex ? 'equipped' : '';
-      li.innerHTML = `<span>${weapon.name}</span><span>DMG ${weapon.damage}</span>`;
-      li.addEventListener('click', () => { this.weapons.equip(index); this.closeInventory(); });
-      this.inventoryList.appendChild(li);
+      const slot = document.createElement('div');
+      slot.className = 'inv-slot' + (index === this.weapons.equippedIndex ? ' equipped' : '');
+      slot.draggable = true;
+      slot.innerHTML = `
+        <div class="slot-icon">${WEAPON_ICONS[weapon.id] || '⚔️'}</div>
+        <div class="slot-label">${weapon.name}</div>
+        <div class="slot-stat">${weapon.damage}</div>
+      `;
+
+      // Tap/click a slot to equip it.
+      slot.addEventListener('click', () => { this.weapons.equip(index); this.closeInventory(); });
+
+      // --- Desktop drag-and-drop (HTML5 DnD) ---
+      slot.addEventListener('dragstart', (e) => {
+        this._dragIndex = index;
+        e.dataTransfer.effectAllowed = 'move';
+      });
+
+      // --- Mobile drag (pointer-based, since HTML5 DnD doesn't fire on touch) ---
+      slot.addEventListener('pointerdown', (e) => {
+        this._dragIndex = index;
+        this._dragEl = slot;
+        slot.setPointerCapture(e.pointerId);
+      });
+      slot.addEventListener('pointermove', (e) => {
+        if (this._dragIndex !== index) return;
+        const overDropZone = this._isPointOverElement(e.clientX, e.clientY, this.dropZone);
+        this.dropZone.classList.toggle('drag-over', overDropZone);
+      });
+      slot.addEventListener('pointerup', (e) => {
+        if (this._dragIndex !== index) return;
+        const overDropZone = this._isPointOverElement(e.clientX, e.clientY, this.dropZone);
+        this.dropZone.classList.remove('drag-over');
+        if (overDropZone) this._dropWeaponAt(index);
+        this._dragIndex = null;
+        this._dragEl = null;
+      });
+
+      this.inventoryGrid.appendChild(slot);
     });
+  }
+
+  _isPointOverElement(x, y, el) {
+    const rect = el.getBoundingClientRect();
+    return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+  }
+
+  _dropWeaponAt(index) {
+    // Equip the dragged weapon first if it isn't already, then drop it.
+    if (index !== this.weapons.equippedIndex) this.weapons.equip(index);
+    this.dropManager.dropEquippedWeapon();
+    this._renderInventoryGrid();
   }
 
   _renderWeapon(weapon) {
@@ -1736,7 +1848,11 @@ class Game {
       eventBus: this.bus, world: this.world, player: this.player,
       cameraRig: this.cameraRig, weaponManager: this.weaponManager,
     });
-    this.uiManager = new UIManager(this.bus, this.weaponManager);
+    this.uiManager = new UIManager(this.bus, this.weaponManager, this.dropManager);
+
+    this.bus.on('death', () => this.raycastManager.markDirty());
+    this.bus.on('pickup-collected', () => this.raycastManager.markDirty());
+    this.bus.on('weapon-dropped', () => this.raycastManager.markDirty());
 
     this.fpsCounter = document.getElementById('fps-counter');
     this._elapsed = 0;
