@@ -20,6 +20,27 @@ html, body {
   font-family: 'Segoe UI', Arial, sans-serif;
   touch-action: none;
 }
+#rotate-overlay {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100vw; height: 100vh;
+  background: #0a0a0a;
+  color: #fff;
+  z-index: 9999;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  text-align: center;
+  font-size: 16px;
+  padding: 20px;
+}
+#rotate-overlay .icon { font-size: 48px; margin-bottom: 14px; animation: rotate-hint 1.6s ease-in-out infinite; }
+@keyframes rotate-hint { 0%,100% { transform: rotate(0deg); } 50% { transform: rotate(90deg); } }
+@media (orientation: portrait) {
+  #rotate-overlay { display: flex; }
+  #app { display: none; }
+}
 #app {
   position: relative;
   width: 100vw;
@@ -39,20 +60,38 @@ html, body {
   width: 100%;
   height: 100%;
   pointer-events: none;
-  z-index: 10;
+  z-index: 30;
 }
 #crosshair {
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 6px;
-  height: 6px;
-  margin: -3px 0 0 -3px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.75);
-  display: none;
+  width: 26px;
+  height: 26px;
+  margin: -13px 0 0 -13px;
+  pointer-events: none;
+  z-index: 31;
 }
-#crosshair.visible { display: block; }
+#crosshair .ch-ring {
+  position: absolute;
+  top: 0; left: 0; width: 100%; height: 100%;
+  border: 2px solid rgba(255,255,255,0.8);
+  border-radius: 50%;
+  box-sizing: border-box;
+  transition: transform 0.1s ease-out, border-color 0.12s ease;
+}
+#crosshair .ch-dot {
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 3px; height: 3px;
+  margin: -1.5px 0 0 -1.5px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.9);
+}
+#crosshair.target-lock .ch-ring { border-color: #ff3b3b; }
+#crosshair.expanded .ch-ring { transform: scale(1.35); }
+#crosshair.swing .ch-ring { transform: scale(1.6); border-color: #ffcc33; }
+
 #fps-counter {
   position: absolute;
   top: 12px;
@@ -80,9 +119,17 @@ html, body {
   position: absolute;
   top: 12px;
   right: 12px;
-  width: 46px;
-  height: 46px;
-  font-size: 20px;
+  width: 40px;
+  height: 40px;
+  font-size: 16px;
+}
+#inventory-btn {
+  position: absolute;
+  top: 12px;
+  right: 58px;
+  width: 40px;
+  height: 40px;
+  font-size: 16px;
 }
 #mobile-controls {
   position: absolute;
@@ -101,8 +148,8 @@ html, body {
   pointer-events: auto;
   touch-action: none;
 }
-#joystick-zone { left: 0; width: 45%; z-index: 22; pointer-events: auto; }
-#look-zone { right: 0; width: 55%; z-index: 21; pointer-events: auto; }
+#joystick-zone { position: absolute; left: 0; right: auto; width: 50%; z-index: 22; pointer-events: auto; bottom: 0; top: auto; height: 55%; }
+#look-zone { position: absolute; right: 0; left: auto; width: 50%; z-index: 21; pointer-events: auto; top: 0; height: 100%; touch-action: none; }
 #joystick-base {
   position: absolute;
   width: 110px;
@@ -126,15 +173,150 @@ html, body {
   position: relative;
   pointer-events: none;
 }
-.action-btn {
+.small-btn {
   position: absolute;
-  right: 30px;
+  border-radius: 50%;
+  font-size: 10px;
+  font-weight: bold;
+  z-index: 26;
+}
+.small-btn:active, .ui-btn:active { transform: scale(0.9); background: rgba(60,60,60,0.75); }
+.small-btn.disabled { opacity: 0.35; pointer-events: none; }
+
+#jump-btn { right: 14px; bottom: 40px; width: 64px; height: 64px; font-size: 12px; }
+#pickup-btn { display: none; right: 14px; top: 144px; width: 44px; height: 44px; background: rgba(40,140,80,0.65); }
+#pickup-btn.visible { display: flex; }
+#drop-btn { right: 14px; top: 90px; width: 40px; height: 40px; }
+
+#interact-prompt {
+  position: absolute;
+  top: 58%;
+  left: 50%;
+  transform: translateX(-50%);
+  color: #fff;
+  background: rgba(0,0,0,0.55);
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  display: none;
+  z-index: 31;
+  white-space: nowrap;
+}
+#interact-prompt.visible { display: block; }
+
+#hit-marker {
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 26px; height: 26px;
+  margin: -13px 0 0 -13px;
+  pointer-events: none;
+  opacity: 0;
+  z-index: 32;
+}
+#hit-marker.show { animation: hitmarker-pop 0.25s ease-out; }
+@keyframes hitmarker-pop {
+  0% { opacity: 1; transform: scale(0.6); }
+  60% { opacity: 1; transform: scale(1.1); }
+  100% { opacity: 0; transform: scale(1.3); }
+}
+#hit-marker::before, #hit-marker::after {
+  content: '';
+  position: absolute;
+  background: #fff;
+  width: 3px; height: 10px;
+}
+#hit-marker::before { top: 0; left: 0; transform: rotate(45deg); transform-origin: bottom; }
+#hit-marker::after { top: 0; right: 0; transform: rotate(-45deg); transform-origin: bottom; }
+
+#damage-flash {
+  position: absolute;
+  top: 0; left: 0; width: 100%; height: 100%;
+  background: radial-gradient(circle, transparent 40%, rgba(255,0,0,0.35) 100%);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 29;
+  transition: opacity 0.3s ease;
+}
+#damage-flash.show { opacity: 1; transition: opacity 0.05s ease; }
+
+#pickup-toast {
+  position: absolute;
+  top: 20%;
+  left: 50%;
+  transform: translateX(-50%);
+  color: #fff;
+  background: rgba(0,0,0,0.6);
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 14px;
+  opacity: 0;
+  z-index: 31;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+#pickup-toast.show { opacity: 1; transform: translateX(-50%) translateY(10px); }
+
+#weapon-hud {
+  position: absolute;
   bottom: 40px;
-  width: 78px;
-  height: 78px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: #fff;
+  font-family: monospace;
   font-size: 13px;
   font-weight: bold;
-  z-index: 25;
+  letter-spacing: 1px;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+  z-index: 31;
+  text-align: center;
+  background: rgba(0,0,0,0.35);
+  padding: 4px 12px;
+  border-radius: 6px;
+}
+
+#inventory-panel {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  background: rgba(0,0,0,0.72);
+  z-index: 40;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+}
+#inventory-panel.visible { display: flex; }
+#inventory-panel .panel-box {
+  background: rgba(25,25,28,0.95);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 10px;
+  padding: 18px;
+  min-width: 240px;
+  max-width: 80vw;
+  color: #fff;
+  font-family: monospace;
+}
+#inventory-panel h3 { margin-bottom: 12px; font-size: 14px; letter-spacing: 1px; opacity: 0.8; }
+#inventory-list { list-style: none; display: flex; flex-direction: column; gap: 8px; max-height: 50vh; overflow-y: auto; }
+#inventory-list li {
+  display: flex; justify-content: space-between; align-items: center;
+  background: rgba(255,255,255,0.06);
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+#inventory-list li.equipped { border: 1px solid #ffcc33; background: rgba(255,204,51,0.12); }
+#inventory-list .empty-msg { opacity: 0.5; font-size: 12px; text-align: center; padding: 10px 0; }
+#inventory-close {
+  margin-top: 14px;
+  width: 100%;
+  padding: 8px;
+  background: rgba(255,255,255,0.1);
+  border: 1px solid rgba(255,255,255,0.25);
+  color: #fff;
+  border-radius: 6px;
+  font-family: monospace;
+  cursor: pointer;
 }
 #loading-screen {
   position: absolute;
@@ -155,13 +337,27 @@ html, body {
 </style>
 </head>
 <body>
+  <div id="rotate-overlay">
+    <div class="icon">📱</div>
+    <div>Please rotate your device to landscape<br/>for the best experience</div>
+  </div>
+
   <div id="app">
     <canvas id="game-canvas"></canvas>
 
     <div id="hud">
-      <div id="crosshair"></div>
+      <div id="crosshair">
+        <div class="ch-ring"></div>
+        <div class="ch-dot"></div>
+      </div>
       <button id="cam-switch-btn" class="ui-btn">🎥</button>
+      <button id="inventory-btn" class="ui-btn">🎒</button>
       <div id="fps-counter">FPS: 0</div>
+      <div id="weapon-hud">UNARMED</div>
+      <div id="interact-prompt"></div>
+      <div id="hit-marker"></div>
+      <div id="damage-flash"></div>
+      <div id="pickup-toast"></div>
     </div>
 
     <div id="mobile-controls">
@@ -170,8 +366,18 @@ html, body {
           <div id="joystick-knob"></div>
         </div>
       </div>
-      <div id="look-zone" class="control-zone"></div>
-      <button id="jump-btn" class="ui-btn action-btn">JUMP</button>
+      <div id="look-zone"></div>
+      <button id="jump-btn" class="ui-btn small-btn">JUMP</button>
+      <button id="pickup-btn" class="ui-btn small-btn">PICKUP</button>
+      <button id="drop-btn" class="ui-btn small-btn">DROP</button>
+    </div>
+
+    <div id="inventory-panel">
+      <div class="panel-box">
+        <h3>INVENTORY</h3>
+        <ul id="inventory-list"></ul>
+        <button id="inventory-close">CLOSE</button>
+      </div>
     </div>
 
     <div id="loading-screen">
@@ -190,68 +396,32 @@ html, body {
   <script type="module">
 import * as THREE from 'three';
 
-// ============================================================
-// CONFIG — every tunable value lives here.
-// ============================================================
 const CONFIG = {
-  world: {
-    groundSize: 200,
-    groundTextureRepeat: 40,
-  },
-  render: {
-    shadowMapSize: 1024,
-    pixelRatioCap: 1.5,
-    fogNear: 50,
-    fogFar: 200,
-  },
+  world: { groundSize: 200, groundTextureRepeat: 40 },
+  render: { shadowMapSize: 1024, pixelRatioCap: 1.5, fogNear: 50, fogFar: 200 },
   player: {
-    height: 1.8,
-    radius: 0.35,
-    walkSpeed: 3.2,
-    runSpeed: 6.2,
-    acceleration: 18,
-    deceleration: 14,
-    airControl: 0.35,
-    jumpForce: 6.2,
-    gravity: -18,
-    turnSmoothing: 12,
-    maxStepHeight: 0.35,
-    maxSlopeAngle: 45,
+    height: 1.8, radius: 0.35,
+    walkSpeed: 3.2, runSpeed: 6.2,
+    acceleration: 18, deceleration: 14, airControl: 0.35,
+    jumpForce: 6.2, gravity: -18,
+    turnSmoothing: 12, maxStepHeight: 0.35, maxSlopeAngle: 45,
   },
   camera: {
-    fov: 65,
-    near: 0.1,
-    far: 1000,
-    thirdPerson: {
-      distance: 4.5,
-      minDistance: 1.2,
-      maxDistance: 7,
-      height: 1.6,
-      followLerp: 8,
-      collisionPadding: 0.3,
-    },
+    fov: 65, near: 0.1, far: 1000,
+    thirdPerson: { distance: 4.5, minDistance: 1.2, maxDistance: 7, height: 1.6, followLerp: 8, collisionPadding: 0.3 },
     firstPerson: { headHeight: 1.65 },
-    switchLerp: 6,
-    verticalMinDeg: -80,
-    verticalMaxDeg: 80,
+    switchLerp: 6, verticalMinDeg: -80, verticalMaxDeg: 80,
   },
-  input: {
-    mouseSensitivity: 0.0022,
-    touchLookSensitivity: 0.0032,
-    joystickDeadzone: 0.12,
-    joystickRunThreshold: 0.72,
-  },
-  lighting: {
-    sunColor: 0xfff2d6,
-    sunIntensity: 2.4,
-    ambientColor: 0xbdd6ff,
-    ambientIntensity: 0.55,
-  },
+  input: { mouseSensitivity: 0.0022, touchLookSensitivity: 0.0032, joystickDeadzone: 0.12, joystickRunThreshold: 0.72 },
+  lighting: { sunColor: 0xfff2d6, sunIntensity: 2.4, ambientColor: 0xbdd6ff, ambientIntensity: 0.55 },
 };
 
-// ============================================================
-// RENDERER
-// ============================================================
+function tryLockLandscape() {
+  if (screen.orientation && screen.orientation.lock) {
+    screen.orientation.lock('landscape').catch(() => {});
+  }
+}
+
 class GameRenderer {
   constructor(canvas) {
     this.canvas = canvas;
@@ -265,7 +435,6 @@ class GameRenderer {
 
     this.scene = new THREE.Scene();
     this.scene.fog = new THREE.Fog(0xbfd9ff, CONFIG.render.fogNear, CONFIG.render.fogFar);
-
     this.camera = new THREE.PerspectiveCamera(CONFIG.camera.fov, 1, CONFIG.camera.near, CONFIG.camera.far);
 
     this._resizeHandler = () => this.resize();
@@ -281,9 +450,6 @@ class GameRenderer {
   render() { this.renderer.render(this.scene, this.camera); }
 }
 
-// ============================================================
-// SKYBOX
-// ============================================================
 const SKY_VERTEX_SHADER = `
 varying vec3 vWorldPosition;
 void main() {
@@ -291,7 +457,6 @@ void main() {
   vWorldPosition = worldPosition.xyz;
   gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
 }`;
-
 const SKY_FRAGMENT_SHADER = `
 uniform vec3 topColor;
 uniform vec3 bottomColor;
@@ -307,15 +472,12 @@ void main() {
   vec3 sunGlow = sunColor * pow(sunAmount, 8.0) * 0.6;
   gl_FragColor = vec4(skyColor + sunGlow, 1.0);
 }`;
-
 const SKY_PRESETS = {
   morning: { top: new THREE.Color(0x4a90d9), bottom: new THREE.Color(0xdff2ff), sun: new THREE.Color(0xfff0c0), sunAngle: 25, fogColor: 0xcfe6ff },
   evening: { top: new THREE.Color(0x2c3e6b), bottom: new THREE.Color(0xff8c5a), sun: new THREE.Color(0xff7043), sunAngle: 8, fogColor: 0xe8a273 },
   night:   { top: new THREE.Color(0x02030a), bottom: new THREE.Color(0x0a1030), sun: new THREE.Color(0x8fa8ff), sunAngle: -10, fogColor: 0x05070f },
 };
 
-// Set to true once you've uploaded the skybox/ image folder next to this HTML file
-// (skybox/right.png, left.png, top.png, bottom.png, front.png, back.png).
 const USE_IMAGE_SKYBOX = true;
 const SKYBOX_PATH = 'skybox/';
 const SKYBOX_FACES = ['right.png', 'left.png', 'top.png', 'bottom.png', 'front.png', 'back.png'];
@@ -324,38 +486,23 @@ class Skybox {
   constructor(scene, radius = 480) {
     this.scene = scene;
     this.timeOfDay = 'morning';
-    this.usingImages = false;
-
-    if (USE_IMAGE_SKYBOX) {
-      this._buildImageSkybox(scene);
-    } else {
-      this._buildProceduralSkybox(scene, radius);
-    }
-
+    if (USE_IMAGE_SKYBOX) this._buildImageSkybox(scene);
+    else this._buildProceduralSkybox(scene, radius);
     this._buildClouds(radius);
   }
 
-  // Cubemap skybox loaded from 6 images. Falls back to the procedural
-  // gradient sky automatically if any face fails to load (e.g. before
-  // you've uploaded the skybox/ folder to GitHub).
   _buildImageSkybox(scene) {
     const loader = new THREE.CubeTextureLoader();
     loader.setPath(SKYBOX_PATH);
-
     loader.load(
       SKYBOX_FACES,
       (cubeTexture) => {
         cubeTexture.colorSpace = THREE.SRGBColorSpace;
         scene.background = cubeTexture;
-        this.usingImages = true;
-        if (this.mesh) {
-          scene.remove(this.mesh);
-          this.mesh = null;
-        }
+        if (this.mesh) { scene.remove(this.mesh); this.mesh = null; }
       },
       undefined,
       () => {
-        // Any face missing/failed -> fall back to procedural sky so the game still runs.
         console.warn('Skybox images not found at "' + SKYBOX_PATH + '" — using procedural sky instead.');
         this._buildProceduralSkybox(scene, 480);
       }
@@ -372,16 +519,10 @@ class Skybox {
       offset: { value: 15 },
       exponent: { value: 0.6 },
     };
-
     const material = new THREE.ShaderMaterial({
-      uniforms: this.uniforms,
-      vertexShader: SKY_VERTEX_SHADER,
-      fragmentShader: SKY_FRAGMENT_SHADER,
-      side: THREE.BackSide,
-      depthWrite: false,
-      fog: false,
+      uniforms: this.uniforms, vertexShader: SKY_VERTEX_SHADER, fragmentShader: SKY_FRAGMENT_SHADER,
+      side: THREE.BackSide, depthWrite: false, fog: false,
     });
-
     this.mesh = new THREE.Mesh(geometry, material);
     this.mesh.renderOrder = -1000;
     scene.add(this.mesh);
@@ -392,10 +533,8 @@ class Skybox {
     this.cloudGroup = new THREE.Group();
     const cloudTexture = this._generateCloudTexture();
     const cloudMaterial = new THREE.SpriteMaterial({ map: cloudTexture, transparent: true, opacity: 0.75, depthWrite: false, fog: false });
-
     const cloudRadius = radius * 0.85;
-    const count = 26;
-    for (let i = 0; i < count; i++) {
+    for (let i = 0; i < 26; i++) {
       const sprite = new THREE.Sprite(cloudMaterial.clone());
       const theta = Math.random() * Math.PI * 2;
       const heightFactor = 0.25 + Math.random() * 0.35;
@@ -453,19 +592,20 @@ class Skybox {
   }
 }
 
-// ============================================================
-// WORLD
-// ============================================================
 class World {
   constructor(scene) {
     this.scene = scene;
     this.collidables = [];
     this.ramps = [];
+    this.enemies = [];
+    this.pickups = [];
 
     this._buildLighting();
     this.skybox = new Skybox(scene);
     this._buildGround();
     this._buildTestObjects();
+    this._buildDemoEnemies();
+    this._buildDemoPickups();
   }
 
   _buildLighting() {
@@ -483,7 +623,6 @@ class World {
     this.sun.shadow.bias = -0.0005;
     this.scene.add(this.sun);
     this.scene.add(this.sun.target);
-
     this.ambient = new THREE.HemisphereLight(0xffffff, ambientColor, ambientIntensity);
     this.scene.add(this.ambient);
   }
@@ -499,7 +638,6 @@ class World {
 
     const geometry = new THREE.PlaneGeometry(size, size, 1, 1);
     const material = new THREE.MeshStandardMaterial({ map: texture, roughness: 0.95, metalness: 0.02 });
-
     this.ground = new THREE.Mesh(geometry, material);
     this.ground.rotation.x = -Math.PI / 2;
     this.ground.receiveShadow = true;
@@ -586,7 +724,99 @@ class World {
     }
   }
 
-  update(delta) { this.skybox.update(delta); }
+  _buildDemoEnemies() {
+    const positions = [[-8, -10], [12, -14], [0, 14]];
+    for (const [x, z] of positions) this._spawnEnemy(x, z);
+  }
+
+  _spawnEnemy(x, z) {
+    const group = new THREE.Group();
+    const mat = new THREE.MeshStandardMaterial({ color: 0xb33636, roughness: 0.6 });
+    const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.3, 0.8, 4, 8), mat);
+    torso.position.y = 1.1;
+    torso.castShadow = true;
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.24, 12, 12), mat);
+    head.position.y = 1.7;
+    head.castShadow = true;
+    group.add(torso, head);
+    group.position.set(x, 0, z);
+    this.scene.add(group);
+
+    const enemy = {
+      mesh: group, headMesh: head, bodyMesh: torso,
+      health: 100, maxHealth: 100, alive: true,
+      id: 'enemy_' + Math.random().toString(36).slice(2, 9), label: 'Hostile',
+    };
+    group.userData.entityType = 'enemy';
+    group.userData.enemyRef = enemy;
+    torso.userData.entityType = 'enemy';
+    torso.userData.enemyRef = enemy;
+    torso.userData.bodyPart = 'body';
+    head.userData.entityType = 'enemy';
+    head.userData.enemyRef = enemy;
+    head.userData.bodyPart = 'head';
+
+    this.enemies.push(enemy);
+    return enemy;
+  }
+
+  removeEnemy(enemy) {
+    this.scene.remove(enemy.mesh);
+    this.enemies = this.enemies.filter((e) => e !== enemy);
+  }
+
+  _buildDemoPickups() {
+    this._spawnPickup({ type: 'weapon', weaponId: 'sword', label: 'Sword', position: [3, 0.4, 2] });
+    this._spawnPickup({ type: 'weapon', weaponId: 'axe', label: 'Axe', position: [-9, 0.4, -2] });
+    this._spawnPickup({ type: 'weapon', weaponId: 'spear', label: 'Spear', position: [16, 0.4, -8] });
+    this._spawnPickup({ type: 'health', amount: 50, label: 'Health Pack', position: [-4, 0.4, 8] });
+    this._spawnPickup({ type: 'coin', amount: 10, label: 'Coins', position: [0, 0.4, 3] });
+    this._spawnPickup({ type: 'resource', amount: 5, label: 'Wood', position: [-2, 0.4, -8] });
+  }
+
+  _spawnPickup({ type, weaponId, amount, label, position }) {
+    const colorByType = { weapon: 0xffcc33, health: 0x33ff77, coin: 0xffe066, resource: 0xcc9966, quest: 0xff66cc };
+    const geoByType = {
+      weapon: new THREE.BoxGeometry(0.5, 0.18, 0.18),
+      health: new THREE.BoxGeometry(0.32, 0.32, 0.32),
+      coin: new THREE.CylinderGeometry(0.18, 0.18, 0.06, 16),
+      resource: new THREE.BoxGeometry(0.3, 0.3, 0.3),
+      quest: new THREE.OctahedronGeometry(0.24),
+    };
+    const mat = new THREE.MeshStandardMaterial({
+      color: colorByType[type] ?? 0xffffff,
+      emissive: colorByType[type] ?? 0x000000,
+      emissiveIntensity: 0.35, roughness: 0.4, metalness: 0.3,
+    });
+    const mesh = new THREE.Mesh(geoByType[type] ?? geoByType.resource, mat);
+    mesh.position.set(position[0], position[1], position[2]);
+    mesh.castShadow = true;
+    this.scene.add(mesh);
+
+    const pickup = {
+      id: 'pickup_' + Math.random().toString(36).slice(2, 9),
+      type, weaponId, amount, label, mesh, baseY: position[1], collected: false,
+    };
+    mesh.userData.entityType = 'pickup';
+    mesh.userData.pickupRef = pickup;
+    this.pickups.push(pickup);
+    return pickup;
+  }
+
+  removePickup(pickup) {
+    this.scene.remove(pickup.mesh);
+    this.pickups = this.pickups.filter((p) => p !== pickup);
+  }
+
+  addDroppedItem(pickupData) { return this._spawnPickup(pickupData); }
+
+  update(delta, elapsed) {
+    this.skybox.update(delta);
+    for (const pickup of this.pickups) {
+      pickup.mesh.position.y = pickup.baseY + Math.sin(elapsed * 2 + pickup.mesh.position.x) * 0.08;
+      pickup.mesh.rotation.y += delta * 1.4;
+    }
+  }
 
   setTimeOfDay(name) {
     this.skybox.setTimeOfDay(name);
@@ -595,12 +825,7 @@ class World {
   }
 }
 
-// ============================================================
-// PHYSICS
-// ============================================================
-const _box = new THREE.Box3();
 const UP = new THREE.Vector3(0, 1, 0);
-
 const _rayOrigin = new THREE.Vector3();
 const _rayDown = new THREE.Vector3(0, -1, 0);
 const _groundRaycaster = new THREE.Raycaster();
@@ -609,17 +834,13 @@ _groundRaycaster.far = 20;
 class PhysicsWorld {
   constructor(world) {
     this.world = world;
-    // Precomputed bounding boxes, refreshed once (static world objects don't move).
     this._boxCache = new Map();
     for (const mesh of world.collidables) {
-      if (mesh.userData.collider === 'box') {
-        this._boxCache.set(mesh, new THREE.Box3().setFromObject(mesh));
-      }
+      if (mesh.userData.collider === 'box') this._boxCache.set(mesh, new THREE.Box3().setFromObject(mesh));
     }
   }
 
   _nearby(position, radius) {
-    // Cheap broad-phase: skip meshes far away before doing precise checks.
     const out = [];
     for (const mesh of this.world.collidables) {
       const dx = mesh.position.x - position.x;
@@ -667,9 +888,6 @@ class PhysicsWorld {
   }
 }
 
-// ============================================================
-// PLAYER
-// ============================================================
 const _forward = new THREE.Vector3();
 const _right = new THREE.Vector3();
 const _moveDir = new THREE.Vector3();
@@ -738,11 +956,8 @@ class Player {
     if (!this.jumpQueued) this._canJump = true;
     this.jumpQueued = false;
 
-    if (!this.grounded) {
-      this.velocity.y += cfg.gravity * delta;
-    } else if (this.velocity.y < 0) {
-      this.velocity.y = 0;
-    }
+    if (!this.grounded) this.velocity.y += cfg.gravity * delta;
+    else if (this.velocity.y < 0) this.velocity.y = 0;
 
     this.position.x += this.velocity.x * delta;
     this.position.z += this.velocity.z * delta;
@@ -794,14 +1009,10 @@ class Player {
   setVisualVisible(visible) { this.mesh.visible = visible; }
 }
 
-// ============================================================
-// CAMERA
-// ============================================================
 const _idealPos = new THREE.Vector3();
 const _headPos = new THREE.Vector3();
 const _rayDir = new THREE.Vector3();
 const _raycaster = new THREE.Raycaster();
-
 const CameraMode = { FIRST_PERSON: 'first', THIRD_PERSON: 'third' };
 
 class CameraRig {
@@ -818,8 +1029,6 @@ class CameraRig {
 
   toggleMode() {
     this.mode = this.mode === CameraMode.THIRD_PERSON ? CameraMode.FIRST_PERSON : CameraMode.THIRD_PERSON;
-    const crosshair = document.getElementById('crosshair');
-    crosshair.classList.toggle('visible', this.mode === CameraMode.FIRST_PERSON);
   }
 
   applyLook(dx, dy) {
@@ -859,14 +1068,11 @@ class CameraRig {
       this.camera.position.copy(_headPos);
     }
 
-    // Keep camera from clipping below ground level when looking down.
     const minCamY = this.player.position.y + 0.15;
     if (this.camera.position.y < minCamY) this.camera.position.y = minCamY;
 
     const lookTarget = new THREE.Vector3(
-      this.camera.position.x + dirX,
-      this.camera.position.y + dirY,
-      this.camera.position.z + dirZ
+      this.camera.position.x + dirX, this.camera.position.y + dirY, this.camera.position.z + dirZ
     );
     this.camera.lookAt(lookTarget);
   }
@@ -887,9 +1093,6 @@ class CameraRig {
   getYaw() { return this.yaw; }
 }
 
-// ============================================================
-// INPUT
-// ============================================================
 class InputManager {
   constructor(canvas) {
     this.canvas = canvas;
@@ -897,11 +1100,14 @@ class InputManager {
     this.state = {
       moveX: 0, moveY: 0, running: false, jumpPressed: false,
       lookDeltaX: 0, lookDeltaY: 0, camToggleRequested: false,
+      pickupRequested: false, dropRequested: false,
+      inventoryToggleRequested: false, attackRequested: false,
     };
     this._keys = new Set();
     this._pointerLocked = false;
     this._joystick = { active: false, pointerId: null, originX: 0, originY: 0, dx: 0, dy: 0 };
     this._look = { active: false, pointerId: null, lastX: 0, lastY: 0 };
+    this._lastTapTime = 0;
 
     this._bindKeyboardMouse();
     if (this.isMobile) this._bindTouchControls();
@@ -916,26 +1122,35 @@ class InputManager {
     window.addEventListener('keydown', (e) => {
       this._keys.add(e.code);
       if (e.code === 'KeyC') this.state.camToggleRequested = true;
+      if (e.code === 'KeyE') this.state.pickupRequested = true;
+      if (e.code === 'KeyG') this.state.dropRequested = true;
+      if (e.code === 'KeyI' || e.code === 'Tab') { e.preventDefault(); this.state.inventoryToggleRequested = true; }
     });
     window.addEventListener('keyup', (e) => this._keys.delete(e.code));
 
     this.canvas.addEventListener('click', () => {
       if (!this.isMobile) this.canvas.requestPointerLock?.();
     });
-
     document.addEventListener('pointerlockchange', () => {
       this._pointerLocked = document.pointerLockElement === this.canvas;
     });
-
     window.addEventListener('mousemove', (e) => {
       if (!this._pointerLocked) return;
       this.state.lookDeltaX += e.movementX * CONFIG.input.mouseSensitivity;
       this.state.lookDeltaY += e.movementY * CONFIG.input.mouseSensitivity;
     });
-
-    document.getElementById('cam-switch-btn').addEventListener('click', () => {
-      this.state.camToggleRequested = true;
+    window.addEventListener('mousedown', (e) => {
+      if (this.isMobile || !this._pointerLocked) return;
+      if (e.button === 0) this.state.attackRequested = true;
     });
+    window.addEventListener('dblclick', (e) => {
+      if (this.isMobile || !this._pointerLocked) return;
+      if (e.button === 0) { this.state.pickupRequested = true; this.state.attackRequested = false; }
+    });
+    window.addEventListener('contextmenu', (e) => { if (this._pointerLocked) e.preventDefault(); });
+
+    document.getElementById('cam-switch-btn').addEventListener('click', () => { this.state.camToggleRequested = true; });
+    document.getElementById('inventory-btn').addEventListener('click', () => { this.state.inventoryToggleRequested = true; });
   }
 
   _readKeyboardMovement() {
@@ -958,7 +1173,8 @@ class InputManager {
     const joystickBase = document.getElementById('joystick-base');
     const lookZone = document.getElementById('look-zone');
     const jumpBtn = document.getElementById('jump-btn');
-    const camBtn = document.getElementById('cam-switch-btn');
+    const pickupBtn = document.getElementById('pickup-btn');
+    const dropBtn = document.getElementById('drop-btn');
     const maxRadius = 45;
 
     joystickZone.addEventListener('pointerdown', (e) => {
@@ -969,7 +1185,6 @@ class InputManager {
       this._joystick.originY = rect.top + rect.height / 2;
       joystickZone.setPointerCapture(e.pointerId);
     });
-
     joystickZone.addEventListener('pointermove', (e) => {
       if (!this._joystick.active || e.pointerId !== this._joystick.pointerId) return;
       let dx = e.clientX - this._joystick.originX;
@@ -980,7 +1195,6 @@ class InputManager {
       this._joystick.dy = dy / maxRadius;
       joystickKnob.style.transform = `translate(${dx}px, ${dy}px)`;
     });
-
     const releaseJoystick = (e) => {
       if (this._joystick.pointerId !== null && e.pointerId !== this._joystick.pointerId) return;
       this._joystick.active = false;
@@ -993,38 +1207,70 @@ class InputManager {
     joystickZone.addEventListener('pointercancel', releaseJoystick);
     joystickZone.addEventListener('pointerleave', releaseJoystick);
 
-    lookZone.addEventListener('pointerdown', (e) => {
+    lookZone.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      const t = e.changedTouches[0];
       this._look.active = true;
-      this._look.pointerId = e.pointerId;
-      this._look.lastX = e.clientX;
-      this._look.lastY = e.clientY;
-      lookZone.setPointerCapture(e.pointerId);
-    });
+      this._look.pointerId = t.identifier;
+      this._look.lastX = t.clientX;
+      this._look.lastY = t.clientY;
+      this._look.startX = t.clientX;
+      this._look.startY = t.clientY;
+      this._look.startTime = performance.now();
+      this._look.moved = false;
+    }, { passive: false });
 
-    lookZone.addEventListener('pointermove', (e) => {
-      if (!this._look.active || e.pointerId !== this._look.pointerId) return;
-      const dx = e.clientX - this._look.lastX;
-      const dy = e.clientY - this._look.lastY;
-      this._look.lastX = e.clientX;
-      this._look.lastY = e.clientY;
+    lookZone.addEventListener('touchmove', (e) => {
+      e.preventDefault();
+      if (!this._look.active) return;
+      let touch = null;
+      for (const t of e.changedTouches) {
+        if (t.identifier === this._look.pointerId) { touch = t; break; }
+      }
+      if (!touch) return;
+      const dx = touch.clientX - this._look.lastX;
+      const dy = touch.clientY - this._look.lastY;
+      this._look.lastX = touch.clientX;
+      this._look.lastY = touch.clientY;
+      if (Math.hypot(touch.clientX - this._look.startX, touch.clientY - this._look.startY) > 12) {
+        this._look.moved = true;
+      }
       this.state.lookDeltaX += dx * CONFIG.input.touchLookSensitivity;
       this.state.lookDeltaY += dy * CONFIG.input.touchLookSensitivity;
-    });
+    }, { passive: false });
 
-    const releaseLook = (e) => {
-      if (this._look.pointerId !== null && e.pointerId !== this._look.pointerId) return;
-      this._look.active = false;
-      this._look.pointerId = null;
+    const releaseLookTouch = (e) => {
+      for (const t of e.changedTouches) {
+        if (t.identifier === this._look.pointerId) {
+          this._look.active = false;
+          this._look.pointerId = null;
+
+          // A quick tap that didn't drag = attack whatever the crosshair is over.
+          // A second quick tap within 300ms of the last one = pickup instead.
+          const heldTime = performance.now() - this._look.startTime;
+          if (!this._look.moved && heldTime < 250) {
+            const now = performance.now();
+            if (now - this._lastTapTime < 300) {
+              this.state.pickupRequested = true;
+              this._lastTapTime = 0;
+            } else {
+              this.state.attackRequested = true;
+              this._lastTapTime = now;
+            }
+          }
+          break;
+        }
+      }
     };
-    lookZone.addEventListener('pointerup', releaseLook);
-    lookZone.addEventListener('pointercancel', releaseLook);
-    lookZone.addEventListener('pointerleave', releaseLook);
+    lookZone.addEventListener('touchend', releaseLookTouch, { passive: true });
+    lookZone.addEventListener('touchcancel', releaseLookTouch, { passive: true });
 
     jumpBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); this.state.jumpPressed = true; });
     jumpBtn.addEventListener('pointerup', () => { this.state.jumpPressed = false; });
     jumpBtn.addEventListener('pointercancel', () => { this.state.jumpPressed = false; });
 
-    camBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); this.state.camToggleRequested = true; });
+    pickupBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); this.state.pickupRequested = true; });
+    dropBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); this.state.dropRequested = true; });
   }
 
   _readJoystickMovement() {
@@ -1049,43 +1295,31 @@ class InputManager {
     this.state.lookDeltaX = 0; this.state.lookDeltaY = 0;
     return { dx, dy };
   }
-
-  consumeCamToggle() {
-    const toggled = this.state.camToggleRequested;
-    this.state.camToggleRequested = false;
-    return toggled;
-  }
+  consumeCamToggle() { const v = this.state.camToggleRequested; this.state.camToggleRequested = false; return v; }
+  consumePickupRequested() { const v = this.state.pickupRequested; this.state.pickupRequested = false; return v; }
+  consumeDropRequested() { const v = this.state.dropRequested; this.state.dropRequested = false; return v; }
+  consumeInventoryToggle() { const v = this.state.inventoryToggleRequested; this.state.inventoryToggleRequested = false; return v; }
+  consumeAttackRequested() { const v = this.state.attackRequested; this.state.attackRequested = false; return v; }
 }
 
-// ============================================================
-// CONTROLS
-// ============================================================
 class Controls {
   constructor(input, player, cameraRig) {
     this.input = input;
     this.player = player;
     this.cameraRig = cameraRig;
   }
-
   update(delta) {
     this.input.update();
-
     const { dx, dy } = this.input.consumeLookDelta();
     if (dx !== 0 || dy !== 0) this.cameraRig.applyLook(dx, dy);
-
     if (this.input.consumeCamToggle()) this.cameraRig.toggleMode();
-
     if (this.input.state.jumpPressed) this.player.requestJump();
-
     const moveInput = { x: this.input.state.moveX, y: this.input.state.moveY };
     const running = this.input.state.running;
     this.player.update(delta, moveInput, running, this.cameraRig.getYaw());
   }
 }
 
-// ============================================================
-// ENGINE — the game loop: Update -> Physics -> Player -> Camera -> Render
-// ============================================================
 class Engine {
   constructor({ onUpdate, onRender }) {
     this.onUpdate = onUpdate;
@@ -1096,36 +1330,384 @@ class Engine {
     this._fpsLast = performance.now();
     this.fps = 60;
   }
-
   start() {
     this.running = true;
     this._lastTime = performance.now();
     requestAnimationFrame((t) => this._loop(t));
   }
-
   _loop(now) {
     if (!this.running) return;
     let delta = (now - this._lastTime) / 1000;
     this._lastTime = now;
     delta = Math.min(delta, 1 / 20);
-
     this.onUpdate(delta);
     this.onRender();
-
     this._fpsFrames++;
     if (now - this._fpsLast >= 500) {
       this.fps = Math.round((this._fpsFrames * 1000) / (now - this._fpsLast));
       this._fpsFrames = 0;
       this._fpsLast = now;
     }
-
     requestAnimationFrame((t) => this._loop(t));
   }
 }
 
-// ============================================================
-// GAME — composition root
-// ============================================================
+class EventBus {
+  constructor() { this._listeners = new Map(); }
+  on(event, fn) {
+    if (!this._listeners.has(event)) this._listeners.set(event, []);
+    this._listeners.get(event).push(fn);
+    return () => this.off(event, fn);
+  }
+  off(event, fn) {
+    const arr = this._listeners.get(event);
+    if (!arr) return;
+    const i = arr.indexOf(fn);
+    if (i >= 0) arr.splice(i, 1);
+  }
+  emit(event, payload) {
+    const arr = this._listeners.get(event);
+    if (!arr) return;
+    for (const fn of arr.slice()) fn(payload);
+  }
+}
+
+const WEAPON_BASE = {
+  id: 'base', name: 'Unknown', type: 'melee',
+  damage: 20, headMultiplier: 2.0, limbMultiplier: 0.7,
+  attackRate: 500, range: 2.2, color: 0xaaaaaa,
+};
+
+const WEAPON_DATABASE = {
+  sword: { ...WEAPON_BASE, id: 'sword', name: 'Sword', damage: 28, attackRate: 450, range: 2.2, color: 0xc0c0c0 },
+  axe:   { ...WEAPON_BASE, id: 'axe',   name: 'Axe',   damage: 40, attackRate: 700, range: 2.0, color: 0x8a5a2b },
+  spear: { ...WEAPON_BASE, id: 'spear', name: 'Spear', damage: 22, attackRate: 380, range: 2.8, color: 0x6b4a2a },
+  dagger:{ ...WEAPON_BASE, id: 'dagger',name: 'Dagger',damage: 16, attackRate: 260, range: 1.6, color: 0xb0b0b0 },
+  hammer:{ ...WEAPON_BASE, id: 'hammer',name: 'Hammer',damage: 50, attackRate: 900, range: 2.0, color: 0x555555 },
+};
+
+function createWeaponInstance(weaponId) {
+  const template = WEAPON_DATABASE[weaponId];
+  if (!template) return null;
+  return { ...template, lastAttackTime: -Infinity };
+}
+
+class RaycastManager {
+  constructor(camera, world) {
+    this.camera = camera;
+    this.world = world;
+    this.raycaster = new THREE.Raycaster();
+    this.lastHit = null;
+  }
+  queryCenter(maxDistance = 100) {
+    this.raycaster.setFromCamera({ x: 0, y: 0 }, this.camera);
+    this.raycaster.far = maxDistance;
+    const targets = [];
+    for (const e of this.world.enemies) targets.push(e.headMesh, e.bodyMesh);
+    for (const p of this.world.pickups) targets.push(p.mesh);
+    for (const c of this.world.collidables) targets.push(c);
+    targets.push(this.world.ground);
+    const hits = this.raycaster.intersectObjects(targets, false);
+    this.lastHit = hits.length > 0 ? hits[0] : null;
+    return this.lastHit;
+  }
+  classifyHit(hit) {
+    if (!hit) return { kind: 'none' };
+    const obj = hit.object;
+    if (obj.userData.entityType === 'enemy') return { kind: 'enemy', enemy: obj.userData.enemyRef, bodyPart: obj.userData.bodyPart, hit };
+    if (obj.userData.entityType === 'pickup') return { kind: 'pickup', pickup: obj.userData.pickupRef, hit };
+    if (obj.userData.isGround) return { kind: 'ground', hit };
+    if (obj.userData.collider) return { kind: 'wall', hit };
+    return { kind: 'other', hit };
+  }
+}
+
+class PointerManager {
+  constructor(raycastManager, player) {
+    this.raycastManager = raycastManager;
+    this.player = player;
+    this.el = document.getElementById('crosshair');
+    this._swingTimer = 0;
+  }
+  update(delta, isAttacking) {
+    const hit = this.raycastManager.queryCenter(100);
+    const info = this.raycastManager.classifyHit(hit);
+    this.el.classList.toggle('target-lock', info.kind === 'enemy');
+
+    const movementExpand = Math.min(1, this.player.currentSpeed / 6);
+    this.el.classList.toggle('expanded', movementExpand > 0.3);
+
+    if (isAttacking) { this.el.classList.add('swing'); this._swingTimer = 0.15; }
+    if (this._swingTimer > 0) {
+      this._swingTimer -= delta;
+      if (this._swingTimer <= 0) this.el.classList.remove('swing');
+    }
+    return info;
+  }
+}
+
+class DamageManager {
+  constructor(eventBus, world) {
+    this.bus = eventBus;
+    this.world = world;
+  }
+  applyHit(weapon, hitInfo) {
+    if (hitInfo.kind !== 'enemy') return null;
+    const enemy = hitInfo.enemy;
+    if (!enemy.alive) return null;
+
+    const multiplier = hitInfo.bodyPart === 'head' ? weapon.headMultiplier
+      : hitInfo.bodyPart === 'limb' ? weapon.limbMultiplier : 1;
+    const damage = Math.round(weapon.damage * multiplier);
+    enemy.health = Math.max(0, enemy.health - damage);
+    this.bus.emit('hit', { enemy, damage, bodyPart: hitInfo.bodyPart, headshot: hitInfo.bodyPart === 'head' });
+
+    const mat = enemy.bodyMesh.material;
+    const originalEmissive = mat.emissive.getHex();
+    mat.emissive.setHex(0xff2222);
+    mat.emissiveIntensity = 0.9;
+    setTimeout(() => { mat.emissive.setHex(originalEmissive); mat.emissiveIntensity = 0; }, 90);
+
+    if (enemy.health <= 0 && enemy.alive) {
+      enemy.alive = false;
+      this.bus.emit('death', { enemy });
+      enemy.mesh.rotation.z = Math.PI / 2.2;
+      enemy.mesh.position.y = 0.2;
+      setTimeout(() => this.world.removeEnemy(enemy), 2500);
+    }
+    return { damage, headshot: hitInfo.bodyPart === 'head' };
+  }
+}
+
+class WeaponManager {
+  constructor(eventBus) {
+    this.bus = eventBus;
+    this.inventory = [];
+    this.equippedIndex = -1;
+  }
+  get equipped() { return this.equippedIndex >= 0 ? this.inventory[this.equippedIndex] : null; }
+
+  addWeapon(weaponId) {
+    const existing = this.inventory.find((w) => w.id === weaponId);
+    if (existing) { this.bus.emit('inventory-changed', { inventory: this.inventory }); return existing; }
+    const weapon = createWeaponInstance(weaponId);
+    this.inventory.push(weapon);
+    if (this.equippedIndex === -1) this.equip(this.inventory.length - 1);
+    this.bus.emit('inventory-changed', { inventory: this.inventory });
+    return weapon;
+  }
+
+  equip(index) {
+    if (index < 0 || index >= this.inventory.length) return;
+    this.equippedIndex = index;
+    this.bus.emit('weapon-equipped', { weapon: this.equipped });
+  }
+
+  dropEquipped() {
+    if (!this.equipped) return null;
+    const dropped = this.inventory.splice(this.equippedIndex, 1)[0];
+    this.equippedIndex = this.inventory.length > 0 ? 0 : -1;
+    this.bus.emit('inventory-changed', { inventory: this.inventory });
+    this.bus.emit('weapon-equipped', { weapon: this.equipped });
+    return dropped;
+  }
+}
+
+class AttackManager {
+  constructor({ eventBus, weaponManager, damageManager, raycastManager }) {
+    this.bus = eventBus;
+    this.weapons = weaponManager;
+    this.damage = damageManager;
+    this.raycast = raycastManager;
+    this.unarmedDamage = 8;
+    this.unarmedRange = 1.6;
+    this.unarmedRate = 550;
+    this._lastUnarmedAttack = -Infinity;
+  }
+
+  requestAttack(now) {
+    const weapon = this.weapons.equipped;
+
+    if (!weapon) {
+      if (now - this._lastUnarmedAttack < this.unarmedRate) return;
+      this._lastUnarmedAttack = now;
+      const hit = this.raycast.queryCenter(this.unarmedRange);
+      const info = this.raycast.classifyHit(hit);
+      let anyHit = null;
+      if (info.kind === 'enemy') {
+        anyHit = this.damage.applyHit({ damage: this.unarmedDamage, headMultiplier: 2, limbMultiplier: 0.7 }, info);
+      }
+      this.bus.emit('attack-swing', { weapon: null });
+      if (anyHit) this.bus.emit('hitmarker', anyHit);
+      return;
+    }
+
+    if (now - weapon.lastAttackTime < weapon.attackRate) return;
+    weapon.lastAttackTime = now;
+
+    const hit = this.raycast.queryCenter(weapon.range);
+    const info = this.raycast.classifyHit(hit);
+    let anyHit = null;
+    if (info.kind === 'enemy') anyHit = this.damage.applyHit(weapon, info);
+
+    this.bus.emit('attack-swing', { weapon });
+    if (anyHit) this.bus.emit('hitmarker', anyHit);
+  }
+}
+
+class PickupManager {
+  constructor({ eventBus, world, player, weaponManager }) {
+    this.bus = eventBus;
+    this.world = world;
+    this.player = player;
+    this.weapons = weaponManager;
+    this.nearest = null;
+    this.pickupRange = 3.2;
+  }
+  update() {
+    let closest = null;
+    let closestDist = this.pickupRange;
+    for (const pickup of this.world.pickups) {
+      if (pickup.collected) continue;
+      const dist = this.player.position.distanceTo(pickup.mesh.position);
+      if (dist < closestDist) { closestDist = dist; closest = pickup; }
+    }
+    this.nearest = closest;
+    this.bus.emit('pickup-nearby', { pickup: closest });
+    return closest;
+  }
+  collect() {
+    const pickup = this.nearest;
+    if (!pickup || pickup.collected) return;
+    pickup.collected = true;
+
+    if (pickup.type === 'weapon') this.weapons.addWeapon(pickup.weaponId);
+    else if (pickup.type === 'health') this.bus.emit('health-pickup', { amount: pickup.amount });
+    else this.bus.emit('generic-pickup', { pickup });
+
+    this.bus.emit('pickup-collected', { pickup });
+
+    const mesh = pickup.mesh;
+    const duration = 220;
+    const start = performance.now();
+    const startScale = mesh.scale.x;
+    const anim = () => {
+      const t = Math.min(1, (performance.now() - start) / duration);
+      const s = startScale * (1 - t);
+      mesh.scale.set(s, s, s);
+      if (t < 1) requestAnimationFrame(anim);
+      else this.world.removePickup(pickup);
+    };
+    requestAnimationFrame(anim);
+  }
+}
+
+class DropManager {
+  constructor({ eventBus, world, player, cameraRig, weaponManager }) {
+    this.bus = eventBus;
+    this.world = world;
+    this.player = player;
+    this.cameraRig = cameraRig;
+    this.weapons = weaponManager;
+  }
+  _dropPosition() {
+    const yaw = this.cameraRig.getYaw();
+    const forward = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
+    return this.player.position.clone().addScaledVector(forward, 1.4).setY(0.4);
+  }
+  dropEquippedWeapon() {
+    const dropped = this.weapons.dropEquipped();
+    if (!dropped) return;
+    const pos = this._dropPosition();
+    const pickup = this.world.addDroppedItem({ type: 'weapon', weaponId: dropped.id, label: dropped.name, position: [pos.x, pos.y, pos.z] });
+    this.bus.emit('weapon-dropped', { weapon: dropped, pickup });
+  }
+}
+
+class UIManager {
+  constructor(eventBus, weaponManager) {
+    this.bus = eventBus;
+    this.weapons = weaponManager;
+    this.weaponHud = document.getElementById('weapon-hud');
+    this.interactPrompt = document.getElementById('interact-prompt');
+    this.pickupBtn = document.getElementById('pickup-btn');
+    this.hitMarker = document.getElementById('hit-marker');
+    this.damageFlash = document.getElementById('damage-flash');
+    this.pickupToast = document.getElementById('pickup-toast');
+    this.inventoryPanel = document.getElementById('inventory-panel');
+    this.inventoryList = document.getElementById('inventory-list');
+    this._toastTimer = null;
+    this.inventoryOpen = false;
+
+    this.bus.on('weapon-equipped', ({ weapon }) => { this._renderWeapon(weapon); this._renderInventoryList(); });
+    this.bus.on('pickup-nearby', ({ pickup }) => this._renderPrompt(pickup));
+    this.bus.on('hitmarker', () => this._showHitMarker());
+    this.bus.on('player-damaged', () => this._flashDamage());
+    this.bus.on('pickup-collected', ({ pickup }) => { this._showToast('Picked up ' + pickup.label); this._renderInventoryList(); });
+    this.bus.on('inventory-changed', () => this._renderInventoryList());
+
+    document.getElementById('inventory-close').addEventListener('click', () => this.closeInventory());
+    this.inventoryPanel.addEventListener('click', (e) => { if (e.target === this.inventoryPanel) this.closeInventory(); });
+
+    this._renderWeapon(null);
+  }
+
+  toggleInventory() { this.inventoryOpen ? this.closeInventory() : this.openInventory(); }
+  openInventory() { this.inventoryOpen = true; this._renderInventoryList(); this.inventoryPanel.classList.add('visible'); }
+  closeInventory() { this.inventoryOpen = false; this.inventoryPanel.classList.remove('visible'); }
+
+  _renderInventoryList() {
+    this.inventoryList.innerHTML = '';
+    if (this.weapons.inventory.length === 0) {
+      const li = document.createElement('li');
+      li.className = 'empty-msg';
+      li.textContent = 'No weapons carried yet. Walk up to a weapon and press Pickup.';
+      this.inventoryList.appendChild(li);
+      return;
+    }
+    this.weapons.inventory.forEach((weapon, index) => {
+      const li = document.createElement('li');
+      li.className = index === this.weapons.equippedIndex ? 'equipped' : '';
+      li.innerHTML = `<span>${weapon.name}</span><span>DMG ${weapon.damage}</span>`;
+      li.addEventListener('click', () => { this.weapons.equip(index); this.closeInventory(); });
+      this.inventoryList.appendChild(li);
+    });
+  }
+
+  _renderWeapon(weapon) {
+    this.weaponHud.textContent = weapon ? weapon.name.toUpperCase() : 'UNARMED';
+  }
+
+  _renderPrompt(pickup) {
+    if (!pickup) {
+      this.interactPrompt.classList.remove('visible');
+      this.pickupBtn.classList.remove('visible');
+      return;
+    }
+    this.interactPrompt.textContent = `Press Pickup — ${pickup.label}`;
+    this.interactPrompt.classList.add('visible');
+    this.pickupBtn.classList.add('visible');
+  }
+
+  _showHitMarker() {
+    this.hitMarker.classList.remove('show');
+    void this.hitMarker.offsetWidth;
+    this.hitMarker.classList.add('show');
+  }
+
+  _flashDamage() {
+    this.damageFlash.classList.add('show');
+    setTimeout(() => this.damageFlash.classList.remove('show'), 260);
+  }
+
+  _showToast(text) {
+    this.pickupToast.textContent = text;
+    this.pickupToast.classList.add('show');
+    clearTimeout(this._toastTimer);
+    this._toastTimer = setTimeout(() => this.pickupToast.classList.remove('show'), 1400);
+  }
+}
+
 class Game {
   constructor() {
     const canvas = document.getElementById('game-canvas');
@@ -1138,7 +1720,26 @@ class Game {
     this.input = new InputManager(canvas);
     this.controls = new Controls(this.input, this.player, this.cameraRig);
 
+    this.bus = new EventBus();
+    this.weaponManager = new WeaponManager(this.bus);
+    this.raycastManager = new RaycastManager(this.gameRenderer.camera, this.world);
+    this.pointerManager = new PointerManager(this.raycastManager, this.player);
+    this.damageManager = new DamageManager(this.bus, this.world);
+    this.attackManager = new AttackManager({
+      eventBus: this.bus, weaponManager: this.weaponManager,
+      damageManager: this.damageManager, raycastManager: this.raycastManager,
+    });
+    this.pickupManager = new PickupManager({
+      eventBus: this.bus, world: this.world, player: this.player, weaponManager: this.weaponManager,
+    });
+    this.dropManager = new DropManager({
+      eventBus: this.bus, world: this.world, player: this.player,
+      cameraRig: this.cameraRig, weaponManager: this.weaponManager,
+    });
+    this.uiManager = new UIManager(this.bus, this.weaponManager);
+
     this.fpsCounter = document.getElementById('fps-counter');
+    this._elapsed = 0;
 
     this.engine = new Engine({
       onUpdate: (delta) => this._update(delta),
@@ -1150,9 +1751,25 @@ class Game {
   }
 
   _update(delta) {
+    this._elapsed += delta;
+    const now = performance.now();
+
     this.controls.update(delta);
     this.cameraRig.update(delta);
-    this.world.update(delta);
+    this.world.update(delta, this._elapsed);
+
+    const attackRequested = this.input.consumeAttackRequested();
+    this.pointerManager.update(delta, attackRequested);
+
+    if (attackRequested) this.attackManager.requestAttack(now);
+
+    this.pickupManager.update();
+    if (this.input.consumePickupRequested()) this.pickupManager.collect();
+
+    if (this.input.consumeDropRequested()) this.dropManager.dropEquippedWeapon();
+
+    if (this.input.consumeInventoryToggle()) this.uiManager.toggleInventory();
+
     this.fpsCounter.textContent = `FPS: ${this.engine.fps}`;
   }
 
@@ -1164,7 +1781,12 @@ class Game {
   }
 }
 
-window.addEventListener('DOMContentLoaded', () => { new Game(); });
+window.addEventListener('DOMContentLoaded', () => {
+  tryLockLandscape();
+  document.body.addEventListener('click', tryLockLandscape, { once: true });
+  document.body.addEventListener('touchstart', tryLockLandscape, { once: true });
+  new Game();
+});
   </script>
 </body>
 </html>
