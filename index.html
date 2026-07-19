@@ -184,8 +184,24 @@ html, body {
 .small-btn.disabled { opacity: 0.35; pointer-events: none; }
 
 #jump-btn { right: 14px; bottom: 56px; width: 60px; height: 60px; font-size: 12px; }
-#pickup-btn { display: none; right: 14px; top: 144px; width: 44px; height: 44px; background: rgba(40,140,80,0.55); backdrop-filter: blur(6px); }
-#pickup-btn.visible { display: flex; }
+#dash-btn {
+  right: 90px; bottom: 56px; width: 54px; height: 54px; font-size: 11px;
+  background: rgba(60,110,220,0.5); backdrop-filter: blur(6px);
+  overflow: hidden;
+}
+#dash-btn .cooldown-fill {
+  position: absolute;
+  left: 0; bottom: 0; width: 100%; height: 0%;
+  background: rgba(0,0,0,0.55);
+  pointer-events: none;
+  transition: height 0.05s linear;
+}
+#dash-btn.on-cooldown { opacity: 0.7; }
+#crouch-btn {
+  position: absolute; top: 12px; right: 104px; width: 40px; height: 40px; font-size: 15px;
+  background: rgba(120,120,120,0.5); backdrop-filter: blur(6px);
+}
+#crouch-btn.active { background: rgba(255,204,51,0.55); border-color: #ffcc33; }
 
 #interact-prompt {
   position: absolute;
@@ -213,6 +229,31 @@ html, body {
   z-index: 32;
 }
 #hit-marker.show { animation: hitmarker-pop 0.25s ease-out; }
+#hit-marker.combo::before, #hit-marker.combo::after { background: #ffcc33; }
+#hit-marker.combo { width: 34px; height: 34px; margin: -17px 0 0 -17px; }
+
+.damage-popup {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  color: #fff;
+  font-family: 'Courier New', monospace;
+  font-weight: bold;
+  font-size: 20px;
+  text-shadow: 0 2px 4px rgba(0,0,0,0.8), 0 0 8px rgba(0,0,0,0.5);
+  pointer-events: none;
+  z-index: 33;
+  opacity: 0;
+  animation: damage-popup-float 0.9s ease-out forwards;
+}
+.damage-popup.headshot { color: #ff5c3c; font-size: 26px; }
+.damage-popup.combo { color: #ffcc33; font-size: 26px; }
+@keyframes damage-popup-float {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(0.7); }
+  15% { opacity: 1; transform: translate(-50%, -50%) scale(1.15); }
+  30% { transform: translate(-50%, -50%) scale(1); }
+  100% { opacity: 0; transform: translate(calc(-50% + var(--drift-x, 0px)), calc(-50% - 46px)) scale(1); }
+}
 @keyframes hitmarker-pop {
   0% { opacity: 1; transform: scale(0.6); }
   60% { opacity: 1; transform: scale(1.1); }
@@ -395,10 +436,12 @@ html, body {
       </div>
       <button id="cam-switch-btn" class="ui-btn">🎥</button>
       <button id="inventory-btn" class="ui-btn">🎒</button>
+      <button id="crouch-btn" class="ui-btn">⬇️</button>
       <div id="fps-counter">FPS: 0</div>
       <div id="weapon-hud">UNARMED</div>
       <div id="interact-prompt"></div>
       <div id="hit-marker"></div>
+      <div id="damage-popup-layer"></div>
       <div id="damage-flash"></div>
       <div id="pickup-toast"></div>
     </div>
@@ -411,7 +454,7 @@ html, body {
       </div>
       <div id="look-zone"></div>
       <button id="jump-btn" class="ui-btn small-btn">JUMP</button>
-      <button id="pickup-btn" class="ui-btn small-btn">PICKUP</button>
+      <button id="dash-btn" class="ui-btn small-btn">DASH<div class="cooldown-fill" id="dash-cooldown-fill"></div></button>
     </div>
 
     <div id="inventory-panel">
@@ -448,6 +491,8 @@ const CONFIG = {
     acceleration: 18, deceleration: 14, airControl: 0.35,
     jumpForce: 6.2, gravity: -18,
     turnSmoothing: 12, maxStepHeight: 0.35, maxSlopeAngle: 45,
+    dashSpeed: 11, dashDuration: 0.22, dashCooldown: 1.1, dashIFrames: 0.22,
+    crouchHeight: 1.0, crouchSpeedMultiplier: 0.45, crouchTransitionSpeed: 10,
   },
   camera: {
     fov: 65, near: 0.1, far: 1000,
@@ -946,6 +991,21 @@ class Player {
     this.jumpQueued = false;
     this._canJump = true;
     this.currentSpeed = 0;
+
+    // Dash / dodge roll state
+    this.dashQueued = false;
+    this.isDashing = false;
+    this.isInvincible = false;
+    this._dashTimer = 0;
+    this._dashCooldownTimer = 0;
+    this._dashDir = new THREE.Vector3();
+    this._dashAttackWindowTimer = 0; // counts down after a dash finishes; an attack landed inside this window gets doubled
+
+    // Crouch state
+    this.crouchHeld = false;
+    this.isCrouching = false;
+    this._crouchAmount = 0; // 0 = standing, 1 = fully crouched, eased for smooth transition
+
     this._buildVisual(scene);
   }
 
@@ -966,6 +1026,15 @@ class Player {
 
   requestJump() { this.jumpQueued = true; }
 
+  requestDash() { this.dashQueued = true; }
+
+  setCrouch(held) { this.crouchHeld = held; }
+
+  get dashCooldownRemaining() { return Math.max(0, this._dashCooldownTimer); }
+  get dashReady() { return this._dashCooldownTimer <= 0 && !this.isDashing; }
+  get isInDashAttackWindow() { return this._dashAttackWindowTimer > 0; }
+  consumeDashAttackWindow() { this._dashAttackWindowTimer = 0; }
+
   update(delta, moveInput, running, cameraYaw) {
     const cfg = CONFIG.player;
     const ground = this.physics.sampleGroundHeight(this.position);
@@ -983,13 +1052,51 @@ class Player {
     const hasInput = _moveDir.lengthSq() > 0.0001;
     if (hasInput) _moveDir.normalize();
 
-    const targetSpeed = running ? cfg.runSpeed : cfg.walkSpeed;
+    // --- Dash / dodge roll ---
+    // Cooldown and active-dash timers always tick down, even mid-frame,
+    // so dashReady/isInvincible stay accurate for other systems (damage, UI).
+    if (this._dashCooldownTimer > 0) this._dashCooldownTimer -= delta;
+    if (this._dashAttackWindowTimer > 0) this._dashAttackWindowTimer -= delta;
+
+    if (this.dashQueued && this.dashReady && this.grounded) {
+      this.isDashing = true;
+      this._dashTimer = cfg.dashDuration;
+      this._dashCooldownTimer = cfg.dashCooldown;
+      this.isInvincible = true;
+      this._dashAttackWindowTimer = cfg.dashCooldown;
+      // Dash toward current movement input if pressed, otherwise dash forward
+      // in the direction the player is already facing (classic dodge-roll feel).
+      if (hasInput) this._dashDir.copy(_moveDir);
+      else this._dashDir.set(Math.sin(this.yaw), 0, Math.cos(this.yaw));
+    }
+    this.dashQueued = false;
+
+    if (this.isDashing) {
+      this._dashTimer -= delta;
+      if (this._dashTimer <= cfg.dashDuration - cfg.dashIFrames) this.isInvincible = false;
+      if (this._dashTimer <= 0) {
+        this.isDashing = false;
+        this.isInvincible = false;
+      }
+    }
+
+    // Crouch: can't crouch while dashing; releases automatically on dash.
+    this.isCrouching = this.crouchHeld && !this.isDashing;
+    this._crouchAmount = THREE.MathUtils.damp(this._crouchAmount, this.isCrouching ? 1 : 0, cfg.crouchTransitionSpeed, delta);
+
+    const targetSpeed = (running ? cfg.runSpeed : cfg.walkSpeed) * (this.isCrouching ? cfg.crouchSpeedMultiplier : 1);
     _targetVel.copy(_moveDir).multiplyScalar(hasInput ? targetSpeed : 0);
 
-    const control = this.grounded ? 1 : cfg.airControl;
-    const rate = (hasInput ? cfg.acceleration : cfg.deceleration) * control;
-    this.velocity.x = THREE.MathUtils.damp(this.velocity.x, _targetVel.x, rate, delta);
-    this.velocity.z = THREE.MathUtils.damp(this.velocity.z, _targetVel.z, rate, delta);
+    if (this.isDashing) {
+      // Dash overrides normal accel/decel with a snappy burst velocity.
+      this.velocity.x = this._dashDir.x * cfg.dashSpeed;
+      this.velocity.z = this._dashDir.z * cfg.dashSpeed;
+    } else {
+      const control = this.grounded ? 1 : cfg.airControl;
+      const rate = (hasInput ? cfg.acceleration : cfg.deceleration) * control;
+      this.velocity.x = THREE.MathUtils.damp(this.velocity.x, _targetVel.x, rate, delta);
+      this.velocity.z = THREE.MathUtils.damp(this.velocity.z, _targetVel.z, rate, delta);
+    }
 
     if (this.jumpQueued && this.grounded && this._canJump) {
       this.velocity.y = cfg.jumpForce;
@@ -1035,6 +1142,15 @@ class Player {
     this.currentSpeed = Math.hypot(this.velocity.x, this.velocity.z);
     this.mesh.position.copy(this.position);
     this.mesh.rotation.y = this.yaw;
+
+    // Crouch visual: squash the body mesh and drop eye height, smoothly.
+    const crouchScale = 1 - this._crouchAmount * 0.35;
+    this.mesh.scale.y = crouchScale;
+    this.currentEyeHeight = this.headHeight - this._crouchAmount * (this.headHeight - CONFIG.player.crouchHeight);
+
+    // Quick forward tilt while dashing/rolling, eased back to upright when done.
+    const targetTilt = this.isDashing ? 0.5 : 0;
+    this.mesh.rotation.x = THREE.MathUtils.damp(this.mesh.rotation.x, targetTilt, 14, delta);
   }
 
   _dampAngle(current, target, rate, delta) {
@@ -1045,7 +1161,8 @@ class Player {
   }
 
   getHeadPosition(out) {
-    out.set(this.position.x, this.position.y + this.headHeight, this.position.z);
+    const eyeHeight = this.currentEyeHeight ?? this.headHeight;
+    out.set(this.position.x, this.position.y + eyeHeight, this.position.z);
     return out;
   }
 
@@ -1145,6 +1262,7 @@ class InputManager {
       lookDeltaX: 0, lookDeltaY: 0, camToggleRequested: false,
       pickupRequested: false, dropRequested: false,
       inventoryToggleRequested: false, attackRequested: false,
+      dashRequested: false, crouchHeld: false,
     };
     this._keys = new Set();
     this._pointerLocked = false;
@@ -1168,6 +1286,7 @@ class InputManager {
       if (e.code === 'KeyE') this.state.pickupRequested = true;
       if (e.code === 'KeyG') this.state.dropRequested = true;
       if (e.code === 'KeyI' || e.code === 'Tab') { e.preventDefault(); this.state.inventoryToggleRequested = true; }
+      if (e.code === 'KeyQ' || e.code === 'ControlLeft') this.state.dashRequested = true;
     });
     window.addEventListener('keyup', (e) => this._keys.delete(e.code));
 
@@ -1194,6 +1313,12 @@ class InputManager {
 
     document.getElementById('cam-switch-btn').addEventListener('click', () => { this.state.camToggleRequested = true; });
     document.getElementById('inventory-btn').addEventListener('click', () => { this.state.inventoryToggleRequested = true; });
+    const crouchBtn = document.getElementById('crouch-btn');
+    crouchBtn.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      this.state.crouchHeld = !this.state.crouchHeld;
+      crouchBtn.classList.toggle('active', this.state.crouchHeld);
+    });
   }
 
   _readKeyboardMovement() {
@@ -1208,6 +1333,7 @@ class InputManager {
     this.state.moveY = y;
     this.state.running = this._keys.has('ShiftLeft') || this._keys.has('ShiftRight');
     this.state.jumpPressed = this._keys.has('Space');
+    this.state.crouchHeld = this._keys.has('KeyZ') || this._keys.has('ControlRight');
   }
 
   _bindTouchControls() {
@@ -1216,7 +1342,7 @@ class InputManager {
     const joystickBase = document.getElementById('joystick-base');
     const lookZone = document.getElementById('look-zone');
     const jumpBtn = document.getElementById('jump-btn');
-    const pickupBtn = document.getElementById('pickup-btn');
+    const dashBtn = document.getElementById('dash-btn');
     const maxRadius = 45;
 
     joystickZone.addEventListener('pointerdown', (e) => {
@@ -1311,7 +1437,7 @@ class InputManager {
     jumpBtn.addEventListener('pointerup', () => { this.state.jumpPressed = false; });
     jumpBtn.addEventListener('pointercancel', () => { this.state.jumpPressed = false; });
 
-    pickupBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); this.state.pickupRequested = true; });
+    dashBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); this.state.dashRequested = true; });
   }
 
   _readJoystickMovement() {
@@ -1341,6 +1467,7 @@ class InputManager {
   consumeDropRequested() { const v = this.state.dropRequested; this.state.dropRequested = false; return v; }
   consumeInventoryToggle() { const v = this.state.inventoryToggleRequested; this.state.inventoryToggleRequested = false; return v; }
   consumeAttackRequested() { const v = this.state.attackRequested; this.state.attackRequested = false; return v; }
+  consumeDashRequested() { const v = this.state.dashRequested; this.state.dashRequested = false; return v; }
 }
 
 class Controls {
@@ -1355,6 +1482,8 @@ class Controls {
     if (dx !== 0 || dy !== 0) this.cameraRig.applyLook(dx, dy);
     if (this.input.consumeCamToggle()) this.cameraRig.toggleMode();
     if (this.input.state.jumpPressed) this.player.requestJump();
+    if (this.input.consumeDashRequested()) this.player.requestDash();
+    this.player.setCrouch(this.input.state.crouchHeld);
     const moveInput = { x: this.input.state.moveX, y: this.input.state.moveY };
     const running = this.input.state.running;
     this.player.update(delta, moveInput, running, this.cameraRig.getYaw());
@@ -1500,16 +1629,16 @@ class DamageManager {
     this.bus = eventBus;
     this.world = world;
   }
-  applyHit(weapon, hitInfo) {
+  applyHit(weapon, hitInfo, bonusMultiplier = 1) {
     if (hitInfo.kind !== 'enemy') return null;
     const enemy = hitInfo.enemy;
     if (!enemy.alive) return null;
 
-    const multiplier = hitInfo.bodyPart === 'head' ? weapon.headMultiplier
+    const partMultiplier = hitInfo.bodyPart === 'head' ? weapon.headMultiplier
       : hitInfo.bodyPart === 'limb' ? weapon.limbMultiplier : 1;
-    const damage = Math.round(weapon.damage * multiplier);
+    const damage = Math.round(weapon.damage * partMultiplier * bonusMultiplier);
     enemy.health = Math.max(0, enemy.health - damage);
-    this.bus.emit('hit', { enemy, damage, bodyPart: hitInfo.bodyPart, headshot: hitInfo.bodyPart === 'head' });
+    this.bus.emit('hit', { enemy, damage, bodyPart: hitInfo.bodyPart, headshot: hitInfo.bodyPart === 'head', comboBonus: bonusMultiplier > 1 });
 
     const mat = enemy.bodyMesh.material;
     const originalEmissive = mat.emissive.getHex();
@@ -1524,7 +1653,7 @@ class DamageManager {
       enemy.mesh.position.y = 0.2;
       setTimeout(() => this.world.removeEnemy(enemy), 2500);
     }
-    return { damage, headshot: hitInfo.bodyPart === 'head' };
+    return { damage, headshot: hitInfo.bodyPart === 'head', comboBonus: bonusMultiplier > 1 };
   }
 }
 
@@ -1563,15 +1692,28 @@ class WeaponManager {
 }
 
 class AttackManager {
-  constructor({ eventBus, weaponManager, damageManager, raycastManager }) {
+  constructor({ eventBus, weaponManager, damageManager, raycastManager, player }) {
     this.bus = eventBus;
     this.weapons = weaponManager;
     this.damage = damageManager;
     this.raycast = raycastManager;
+    this.player = player;
     this.unarmedDamage = 8;
     this.unarmedRange = 1.6;
     this.unarmedRate = 550;
     this._lastUnarmedAttack = -Infinity;
+    this.comboMultiplier = 2; // dash-then-attack damage bonus
+  }
+
+  _getComboMultiplier() {
+    // Only the first attack inside the post-dash window is doubled;
+    // consuming it here means a second attack (even before cooldown ends)
+    // does normal damage, matching "one bonus hit per dash".
+    if (this.player && this.player.isInDashAttackWindow) {
+      this.player.consumeDashAttackWindow();
+      return this.comboMultiplier;
+    }
+    return 1;
   }
 
   requestAttack(now) {
@@ -1584,7 +1726,8 @@ class AttackManager {
       const info = this.raycast.classifyHit(hit);
       let anyHit = null;
       if (info.kind === 'enemy') {
-        anyHit = this.damage.applyHit({ damage: this.unarmedDamage, headMultiplier: 2, limbMultiplier: 0.7 }, info);
+        const bonus = this._getComboMultiplier();
+        anyHit = this.damage.applyHit({ damage: this.unarmedDamage, headMultiplier: 2, limbMultiplier: 0.7 }, info, bonus);
       }
       this.bus.emit('attack-swing', { weapon: null });
       if (anyHit) this.bus.emit('hitmarker', anyHit);
@@ -1597,7 +1740,10 @@ class AttackManager {
     const hit = this.raycast.queryCenter(weapon.range);
     const info = this.raycast.classifyHit(hit);
     let anyHit = null;
-    if (info.kind === 'enemy') anyHit = this.damage.applyHit(weapon, info);
+    if (info.kind === 'enemy') {
+      const bonus = this._getComboMultiplier();
+      anyHit = this.damage.applyHit(weapon, info, bonus);
+    }
 
     this.bus.emit('attack-swing', { weapon });
     if (anyHit) this.bus.emit('hitmarker', anyHit);
@@ -1682,8 +1828,8 @@ class UIManager {
     this.dropManager = dropManager;
     this.weaponHud = document.getElementById('weapon-hud');
     this.interactPrompt = document.getElementById('interact-prompt');
-    this.pickupBtn = document.getElementById('pickup-btn');
     this.hitMarker = document.getElementById('hit-marker');
+    this.damagePopupLayer = document.getElementById('damage-popup-layer');
     this.damageFlash = document.getElementById('damage-flash');
     this.pickupToast = document.getElementById('pickup-toast');
     this.inventoryPanel = document.getElementById('inventory-panel');
@@ -1696,7 +1842,8 @@ class UIManager {
 
     this.bus.on('weapon-equipped', ({ weapon }) => { this._renderWeapon(weapon); this._renderInventoryGrid(); });
     this.bus.on('pickup-nearby', ({ pickup }) => this._renderPrompt(pickup));
-    this.bus.on('hitmarker', () => this._showHitMarker());
+    this.bus.on('hitmarker', (hit) => this._showHitMarker(hit));
+    this.bus.on('hit', (hit) => this._showDamagePopup(hit));
     this.bus.on('player-damaged', () => this._flashDamage());
     this.bus.on('pickup-collected', ({ pickup }) => { this._showToast('Picked up ' + pickup.label); this._renderInventoryGrid(); });
     this.bus.on('inventory-changed', () => this._renderInventoryGrid());
@@ -1793,18 +1940,29 @@ class UIManager {
   _renderPrompt(pickup) {
     if (!pickup) {
       this.interactPrompt.classList.remove('visible');
-      this.pickupBtn.classList.remove('visible');
       return;
     }
-    this.interactPrompt.textContent = `Press Pickup — ${pickup.label}`;
+    this.interactPrompt.textContent = `Double-tap to pick up — ${pickup.label}`;
     this.interactPrompt.classList.add('visible');
-    this.pickupBtn.classList.add('visible');
   }
 
-  _showHitMarker() {
-    this.hitMarker.classList.remove('show');
+  _showHitMarker(hit) {
+    this.hitMarker.classList.remove('show', 'combo');
     void this.hitMarker.offsetWidth;
     this.hitMarker.classList.add('show');
+    if (hit && hit.comboBonus) this.hitMarker.classList.add('combo');
+  }
+
+  _showDamagePopup(hit) {
+    if (!hit || typeof hit.damage !== 'number') return;
+    const el = document.createElement('div');
+    el.className = 'damage-popup';
+    if (hit.headshot) el.classList.add('headshot');
+    if (hit.comboBonus) el.classList.add('combo');
+    el.textContent = (hit.headshot ? hit.damage + ' HS' : String(hit.damage)) + (hit.comboBonus ? '!' : '');
+    el.style.setProperty('--drift-x', (Math.random() * 40 - 20) + 'px');
+    this.damagePopupLayer.appendChild(el);
+    setTimeout(() => el.remove(), 950);
   }
 
   _flashDamage() {
@@ -1840,6 +1998,7 @@ class Game {
     this.attackManager = new AttackManager({
       eventBus: this.bus, weaponManager: this.weaponManager,
       damageManager: this.damageManager, raycastManager: this.raycastManager,
+      player: this.player,
     });
     this.pickupManager = new PickupManager({
       eventBus: this.bus, world: this.world, player: this.player, weaponManager: this.weaponManager,
@@ -1856,6 +2015,8 @@ class Game {
 
     this.fpsCounter = document.getElementById('fps-counter');
     this._elapsed = 0;
+    this._dashBtn = document.getElementById('dash-btn');
+    this._dashCooldownFill = document.getElementById('dash-cooldown-fill');
 
     this.engine = new Engine({
       onUpdate: (delta) => this._update(delta),
@@ -1885,6 +2046,13 @@ class Game {
     if (this.input.consumeDropRequested()) this.dropManager.dropEquippedWeapon();
 
     if (this.input.consumeInventoryToggle()) this.uiManager.toggleInventory();
+
+    if (this._dashCooldownFill) {
+      const cd = this.player.dashCooldownRemaining;
+      const pct = CONFIG.player.dashCooldown > 0 ? Math.min(1, cd / CONFIG.player.dashCooldown) : 0;
+      this._dashCooldownFill.style.height = (pct * 100) + '%';
+      this._dashBtn.classList.toggle('on-cooldown', pct > 0);
+    }
 
     this.fpsCounter.textContent = `FPS: ${this.engine.fps}`;
   }
